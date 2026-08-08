@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  // V3.1: orientation-aware Smart Apply + functional preview zoom/Fit.
+  // V3.2: orientation-aware Smart Apply + direct-source watermark rendering + HiDPI preview + functional zoom/Fit.
 
   const $ = (id) => document.getElementById(id);
   const toast = (title, message, kind = "info", duration) => window.NTS?.showToast?.(title, message, kind, duration);
@@ -19,6 +19,10 @@
       timer = window.setTimeout(() => reject(new Error(message || "Tác vụ mất quá nhiều thời gian.")), ms);
     });
     return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timer));
+  }
+
+  function safeLocalGet(key) {
+    try { return window.localStorage?.getItem(key) ?? null; } catch (_) { return null; }
   }
 
   function cleanupSurface(surface) {
@@ -44,6 +48,7 @@
     renderRaf: 0,
     previewZoom: 1,
     lastFitScale: 1,
+    forcePng: safeLocalGet("nts-export-lossless") === "1",
     settings: {
       pos: "SE",
       opacity: 92,
@@ -92,6 +97,7 @@
     selectedImageStatus: $("selectedImageStatus"),
     logoPreviewBox: $("logoPreviewBox"),
     logoFileName: $("logoFileName"),
+    logoQualityStatus: $("logoQualityStatus"),
     positionGrid: $("positionGrid"),
     opacityRange: $("opacityRange"),
     sizeRange: $("sizeRange"),
@@ -106,6 +112,7 @@
     offsetYValue: $("offsetYValue"),
     rotationValue: $("rotationValue"),
     keepInsideToggle: $("keepInsideToggle"),
+    losslessExportToggle: $("losslessExportToggle"),
     resetTransform: $("resetTransform"),
     applySelectedButton: $("applySelectedButton"),
     applyAllButton: $("applyAllButton"),
@@ -377,7 +384,10 @@
   }
 
   function setupCanvas(canvas, cssWidth, cssHeight) {
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    // V3.2: keep preview crisp on Retina/HiDPI without exploding canvas memory.
+    const rawDpr = Math.max(1, Number(window.devicePixelRatio || 1));
+    const dprCap = IS_MOBILE ? 2 : 2.5;
+    const dpr = Math.min(rawDpr, dprCap);
     const pixelW = Math.max(1, Math.round(cssWidth * dpr));
     const pixelH = Math.max(1, Math.round(cssHeight * dpr));
     if (canvas.width !== pixelW || canvas.height !== pixelH) {
@@ -425,10 +435,9 @@
     return c;
   }
 
-  function rotatedLogoSurface(logo, targetShortSide, rotationDeg, settings = state.settings) {
-    const ratio = settings.size / 100;
-    let w;
-    let h;
+  function watermarkGeometry(logo, targetShortSide, rotationDeg, settings = state.settings) {
+    const ratio = Number(settings.size || 0) / 100;
+    let w, h;
     if (logo.width >= logo.height) {
       w = targetShortSide * ratio;
       h = w * (logo.height / logo.width);
@@ -436,24 +445,39 @@
       h = targetShortSide * ratio;
       w = h * (logo.width / logo.height);
     }
-    w = Math.max(1, w);
-    h = Math.max(1, h);
-
-    const rad = rotationDeg * Math.PI / 180;
+    w = Math.max(1, w); h = Math.max(1, h);
+    const rad = Number(rotationDeg || 0) * Math.PI / 180;
     const cos = Math.abs(Math.cos(rad));
     const sin = Math.abs(Math.sin(rad));
-    const rw = Math.max(1, w * cos + h * sin);
-    const rh = Math.max(1, w * sin + h * cos);
-    const surface = createSurface(rw, rh);
-    const ctx = surface.getContext("2d");
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
-    ctx.translate(surface.width / 2, surface.height / 2);
-    ctx.rotate(rad);
-    ctx.globalAlpha = settings.opacity / 100;
-    ctx.drawImage(logo, -w / 2, -h / 2, w, h);
-    ctx.globalAlpha = 1;
-    return surface;
+    return {
+      w, h, rad,
+      width: Math.max(1, w * cos + h * sin),
+      height: Math.max(1, w * sin + h * cos)
+    };
+  }
+
+  function logoQualityMessage(logo, item = currentItem()) {
+    if (!logo) return { kind: "info", title: "Chất lượng logo", text: "Chọn PNG/WebP nền trong suốt từ 1000 px trở lên để xuất nét nhất." };
+    const longSide = Math.max(Number(logo.width || 0), Number(logo.height || 0));
+    let targetLong = 0;
+    if (item && validDimension(item.width) && validDimension(item.height)) {
+      const short = Math.min(item.width, item.height);
+      const ratio = Number(state.settings.size || 0) / 100;
+      targetLong = short * ratio;
+    }
+    if (longSide < 600 || (targetLong && targetLong > longSide * 1.25)) {
+      return { kind: "warning", title: `${logo.width}×${logo.height}px`, text: "Logo nguồn hơi nhỏ so với kích thước gắn. Hãy dùng PNG/WebP lớn hơn để tránh phải phóng ảnh logo." };
+    }
+    return { kind: "good", title: `${logo.width}×${logo.height}px · nguồn tốt`, text: "HiDPI preview + render trực tiếp từ logo nguồn đang bật. Export tránh resample hai lần để giữ nét tốt hơn." };
+  }
+
+  function renderLogoQuality(logo) {
+    const el = els.logoQualityStatus; if (!el) return;
+    const info = logoQualityMessage(logo);
+    el.dataset.kind = info.kind;
+    const strong = el.querySelector("strong"), small = el.querySelector("small");
+    if (strong) strong.textContent = info.title;
+    if (small) small.textContent = info.text;
   }
 
   function watermarkPosition(imgX, imgY, imgW, imgH, logoW, logoH, scaleFromSource, settings = state.settings) {
@@ -477,6 +501,23 @@
       y = Math.min(Math.max(y, imgY), imgY + imgH - logoH);
     }
     return { x, y };
+  }
+
+  function drawWatermarkDirect(ctx, logo, imgRect, targetShortSide, scaleFromSource, settings = state.settings) {
+    const g = watermarkGeometry(logo, targetShortSide, settings.rotation, settings);
+    const pos = watermarkPosition(imgRect.x, imgRect.y, imgRect.w, imgRect.h, g.width, g.height, scaleFromSource, settings);
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.globalAlpha = Math.max(0, Math.min(1, Number(settings.opacity || 0) / 100));
+    ctx.translate(pos.x + g.width / 2, pos.y + g.height / 2);
+    ctx.rotate(g.rad);
+    // Draw from the original logo bitmap straight to the destination canvas.
+    // Avoiding an intermediate resized raster prevents the extra resampling pass
+    // that made text/logomarks look soft, especially on high-resolution exports.
+    ctx.drawImage(logo, -g.w / 2, -g.h / 2, g.w, g.h);
+    ctx.restore();
+    return { x: pos.x, y: pos.y, width: g.width, height: g.height };
   }
 
   function drawBase(ctx, bitmap, rect) {
@@ -519,10 +560,8 @@
       drawBase(afterCtx, current.bitmap, rect);
 
       if (logo) {
-        const rotated = rotatedLogoSurface(logo, Math.min(rect.w, rect.h), renderSettings.rotation, renderSettings);
-        const pos = watermarkPosition(rect.x, rect.y, rect.w, rect.h, rotated.width, rotated.height, rect.scale, renderSettings);
-        afterCtx.drawImage(rotated, pos.x, pos.y);
-        cleanupSurface(rotated);
+        drawWatermarkDirect(afterCtx, logo, rect, Math.min(rect.w, rect.h), rect.scale, renderSettings);
+        renderLogoQuality(logo);
       }
       updateZoomUi();
 
@@ -730,8 +769,13 @@
     img.src = state.logoUrl;
     img.alt = "Logo đã chọn";
     els.logoPreviewBox.replaceChildren(img);
+    try {
+      const logo = await ensureLogoBitmap();
+      renderLogoQuality(logo);
+      const quality = logoQualityMessage(logo);
+      toast(quality.kind === "warning" ? "Logo cần độ phân giải cao hơn" : "Logo đã sẵn sàng", quality.text, quality.kind === "warning" ? "warning" : "success", 5600);
+    } catch (_) { renderLogoQuality(null); }
     schedulePreview(true);
-    toast("Đã nạp logo", file.name, "success");
   });
 
   els.fitPreview.addEventListener("click", () => {
@@ -796,15 +840,15 @@
   function outputSpec(item) {
     const name = item.file.name;
     const stem = name.replace(/\.[^.]+$/, "");
-    if (/jpe?g$/i.test(name) || item.file.type === "image/jpeg") return { mime: "image/jpeg", ext: "jpg", quality: .96, name: `${stem}_watermarked.jpg` };
-    if (/webp$/i.test(name) || item.file.type === "image/webp") return { mime: "image/webp", ext: "webp", quality: .96, name: `${stem}_watermarked.webp` };
+    if (state.forcePng) return { mime: "image/png", ext: "png", quality: 1, name: `${stem}_watermarked.png` };
+    if (/jpe?g$/i.test(name) || item.file.type === "image/jpeg") return { mime: "image/jpeg", ext: "jpg", quality: .995, name: `${stem}_watermarked.jpg` };
+    if (/webp$/i.test(name) || item.file.type === "image/webp") return { mime: "image/webp", ext: "webp", quality: .99, name: `${stem}_watermarked.webp` };
     return { mime: "image/png", ext: "png", quality: 1, name: `${stem}_watermarked.png` };
   }
 
   async function renderExportBlob(item) {
     let bitmap = null;
     let surface = null;
-    let rotated = null;
     try {
       bitmap = await withTimeout(
         createImageBitmap(item.file, { imageOrientation: "from-image" }).catch(() => createImageBitmap(item.file)),
@@ -831,16 +875,18 @@
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = "high";
       ctx.drawImage(bitmap, 0, 0);
-      rotated = rotatedLogoSurface(logo, Math.min(bitmap.width, bitmap.height), settings.rotation, settings);
-      const pos = watermarkPosition(0, 0, bitmap.width, bitmap.height, rotated.width, rotated.height, 1, settings);
-      ctx.drawImage(rotated, pos.x, pos.y);
+      drawWatermarkDirect(
+        ctx, logo,
+        { x: 0, y: 0, w: bitmap.width, h: bitmap.height },
+        Math.min(bitmap.width, bitmap.height),
+        1, settings
+      );
       const spec = outputSpec(item);
       const blob = await canvasToBlob(surface, spec.mime, spec.quality);
       if (!blob || blob.size === 0) throw new Error("Trình duyệt tạo ra file ảnh rỗng.");
       return { blob, fileName: spec.name };
     } finally {
       bitmap?.close?.();
-      cleanupSurface(rotated);
       cleanupSurface(surface);
     }
   }
@@ -1086,6 +1132,19 @@
       if (reservation && !finished && window.NTS?.membership?.cancelExport) await window.NTS.membership.cancelExport(reservation).catch(()=>{});
       hideHud(); setExportUi(false);
     }
+  }
+
+  if (els.losslessExportToggle) {
+    els.losslessExportToggle.checked = state.forcePng;
+    els.losslessExportToggle.addEventListener("change", () => {
+      state.forcePng = Boolean(els.losslessExportToggle.checked);
+      try { localStorage.setItem("nts-export-lossless", state.forcePng ? "1" : "0"); } catch (_) {}
+      toast(
+        state.forcePng ? "PNG siêu nét đã bật" : "Đã dùng định dạng gốc",
+        state.forcePng ? "Ảnh xuất sẽ dùng PNG lossless để logo/text sắc nét nhất. Dung lượng file sẽ lớn hơn." : "JPG/WebP sẽ được xuất ở chất lượng rất cao để cân bằng độ nét và dung lượng.",
+        state.forcePng ? "success" : "info", 4200
+      );
+    });
   }
 
   els.exportSelectedButton.addEventListener("click", () => exportBatch(selectedItems(), "đã chọn"));

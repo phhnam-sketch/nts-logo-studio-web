@@ -1,5 +1,5 @@
 /*
-  NTS Logo Studio Web V3.1 - CẤU HÌNH DỄ THAY ĐỔI
+  NTS Logo Studio Web V3.2 - CẤU HÌNH DỄ THAY ĐỔI
 
   1) SUPABASE_URL + SUPABASE_PUBLISHABLE_KEY:
      Supabase Dashboard > Project Settings > API / Connect.
@@ -7,9 +7,9 @@
      TUYỆT ĐỐI KHÔNG đặt service_role / sb_secret / database password ở đây.
 
   2) ĐỔI LOGO / QR / ẢNH MẶC ĐỊNH:
-     - Logo:            assets/brand/logo.svg
-     - Avatar mặc định: assets/brand/avatar-default.svg
-     - Cover mặc định:  assets/brand/cover-default.svg
+     - Logo:            assets/brand/logo.png
+     - Avatar mặc định: assets/brand/avatar-default.png
+     - Cover mặc định:  assets/brand/cover-default.png
      - QR thanh toán:   assets/payment/payment-qr.png
      Chỉ cần thay file cùng tên là website dùng ảnh mới.
 
@@ -26,16 +26,16 @@ window.APP_CONFIG = {
   SUPABASE_PUBLISHABLE_KEY: "sb_publishable___QvvAoa-1g7xxiPYXvFaw_r5vTMQ8Q",
 
   APP_NAME: "NTS Logo Studio Pro Web",
-  APP_VERSION: "3.1.0",
+  APP_VERSION: "3.2.0",
 
   BRAND: {
     shortName: "NTS",
     studioName: "NAM TIÊN SINH STUDIO",
     primary: "#711A37",
     accent: "#A63255",
-    logoUrl: "assets/brand/logo.svg",
-    defaultAvatarUrl: "assets/brand/avatar-default.svg",
-    defaultCoverUrl: "assets/brand/cover-default.svg"
+    logoUrl: "assets/brand/logo.png",
+    defaultAvatarUrl: "assets/brand/avatar-default.png",
+    defaultCoverUrl: "assets/brand/cover-default.png"
   },
 
   MEMBERSHIP: {

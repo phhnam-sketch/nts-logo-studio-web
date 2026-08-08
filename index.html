@@ -5,24 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#711A37" />
   <meta name="description" content="NTS Logo Studio Pro Web - công cụ đóng dấu ảnh trực quan với tài khoản người dùng." />
-  <title>NTS Logo Studio Pro Web</title>
-  <link rel="icon" href="assets/brand/logo.svg" type="image/svg+xml" />
+  <title>NAM TIÊN SINH LOGO</title>
+  <link rel="icon" href="assets/brand/logo.png" type="image/png" />
   <link rel="stylesheet" href="assets/styles.css" />
 </head>
 <body>
-  <div id="globalToast" class="toast" role="status" aria-live="polite" aria-atomic="true">
-    <div class="toast-icon" id="toastIcon">i</div>
-    <div class="toast-copy">
-      <strong id="toastTitle">Thông báo</strong>
-      <span id="toastMessage"></span>
-    </div>
-    <button id="toastClose" class="icon-button" type="button" aria-label="Đóng thông báo">×</button>
-  </div>
+  <div id="toastStack" class="toast-stack" aria-live="polite" aria-atomic="false"></div>
 
   <main id="authView" class="auth-shell">
     <section class="auth-brand-panel" aria-label="Giới thiệu NTS Logo Studio">
       <div class="brand-lockup">
-        <img class="brand-logo-image" src="assets/brand/logo.svg" alt="NTS" />
+        <img class="brand-logo-image" src="assets/brand/logo.png" alt="NTS" />
         <div>
           <div class="brand-name">LOGO STUDIO PRO</div>
           <div class="brand-version">WEB EDITION</div>
@@ -139,10 +132,10 @@
     <header class="app-topbar">
       <div class="app-brand">
         <button id="mobileLibraryToggle" class="icon-button mobile-only" type="button" aria-label="Mở thư viện">☰</button>
-        <img class="brand-logo-image small" src="assets/brand/logo.svg" alt="NTS" />
+        <img class="brand-logo-image small" src="assets/brand/logo.png" alt="NTS" />
         <div class="app-brand-text">
           <strong>LOGO STUDIO PRO</strong>
-          <span>WEB BETA</span>
+          <span>WEB V3.2</span>
         </div>
       </div>
 
@@ -161,7 +154,7 @@
       <div class="user-menu-wrap">
         <button id="userMenuButton" class="user-chip" type="button" aria-expanded="false">
           <span class="user-avatar">
-            <img id="userAvatarImage" class="hidden" src="assets/brand/avatar-default.svg" alt="Ảnh đại diện" />
+            <img id="userAvatarImage" class="hidden" src="assets/brand/avatar-default.png" alt="Ảnh đại diện" />
             <span id="userAvatarFallback">N</span>
           </span>
           <span class="user-copy">
@@ -301,6 +294,7 @@
               </div>
               <span class="logo-change">Đổi</span>
             </label>
+            <div id="logoQualityStatus" class="logo-quality-status"><span>◇</span><div><strong>Chất lượng logo</strong><small>Chọn PNG/WebP nền trong suốt từ 1000 px trở lên để xuất nét nhất.</small></div></div>
           </section>
 
           <section class="setting-section">
@@ -361,7 +355,7 @@
               <button id="applySelectedButton" class="secondary-button" type="button">Áp dụng ảnh đã chọn</button>
               <button id="applyAllButton" class="secondary-button" type="button">Áp dụng tất cả</button>
             </div>
-            <div class="smart-apply-note"><strong>SMART APPLY 3.1</strong><span>Khi đồng bộ nhiều ảnh, X tự scale theo chiều rộng, Y theo chiều cao và lề theo cạnh ngắn. Vì vậy ảnh ngang và ảnh dọc giữ vị trí tương đối giống nhau thay vì copy pixel cứng.</span></div>
+            <div class="smart-apply-note"><strong>SMART APPLY 3.2</strong><span>Đồng bộ thông minh</span></div>
           </section>
 
           <section class="setting-section export-section">
@@ -369,6 +363,11 @@
               <div class="section-label">XUẤT ẢNH</div>
               <span id="exportSelectionBadge" class="export-badge">0 ảnh</span>
             </div>
+            <label class="toggle-row export-quality-toggle">
+              <span><strong>PNG siêu nét</strong><small>Giữ chi tiết logo/text tốt nhất; file sẽ lớn hơn JPG/WebP.</small></span>
+              <input id="losslessExportToggle" type="checkbox" />
+              <span class="toggle-ui"></span>
+            </label>
             <button id="exportSelectedButton" class="primary-button full-width" type="button">⇩ XUẤT ẢNH ĐÃ CHỌN</button>
             <div class="action-grid export-secondary-row">
               <button id="exportAllButton" class="secondary-button" type="button">Xuất tất cả</button>
@@ -392,10 +391,10 @@
     <section id="profilePage" class="app-page account-page hidden">
       <div class="page-container">
         <div class="profile-hero-card">
-          <img id="profileCoverPreview" class="profile-cover" src="assets/brand/cover-default.svg" alt="Ảnh bìa" />
+          <img id="profileCoverPreview" class="profile-cover" src="assets/brand/cover-default.png" alt="Ảnh bìa" />
           <div class="profile-hero-overlay"></div>
           <div class="profile-identity">
-            <img id="profileAvatarPreview" class="profile-avatar-large" src="assets/brand/avatar-default.svg" alt="Ảnh đại diện" />
+            <img id="profileAvatarPreview" class="profile-avatar-large" src="assets/brand/avatar-default.png" alt="Ảnh đại diện" />
             <div><div class="profile-name-row"><h1 id="profileNameHero">Người dùng</h1><span id="profilePlanBadge" class="plan-badge free">FREE</span></div><p id="profileEmailHero">email@example.com</p><span id="profileMembershipText" class="profile-membership-text">Đang tải gói thành viên...</span></div>
           </div>
         </div>
@@ -427,28 +426,52 @@
 
     <section id="vipPage" class="app-page membership-page hidden">
       <div class="page-container narrow-container">
-        <div class="membership-hero">
-          <span class="auth-badge">NTS VIP</span>
-          <h1>Mở khóa toàn bộ Logo Studio.</h1>
-          <p>Free phù hợp để thử nghiệm. VIP dành cho người dùng cần xử lý ảnh thường xuyên và không bị giới hạn quota.</p>
+        <div class="membership-hero premium-membership-hero">
+          <div><span class="auth-badge">NTS VIP</span><h1>Nâng cấp theo cách rõ ràng và nhanh hơn.</h1><p>Chọn thời hạn, hệ thống tự tính số tiền và tạo mã thanh toán riêng cho tài khoản của bạn.</p></div>
+          <div class="membership-hero-status"><span class="status-dot"></span><strong>Thanh toán có mã đối soát</strong><small>Admin duyệt đúng số tháng đã mua</small></div>
         </div>
+
         <div class="pricing-grid">
           <article class="pricing-card free-card"><span class="plan-badge free">FREE</span><h2>0đ</h2><p>Dùng cơ bản mỗi tháng.</p><ul><li><strong id="freeLimitCopy">10 ảnh/tháng</strong></li><li>Preview Before/After</li><li>Batch nhỏ & mobile safe</li><li>Hồ sơ cá nhân</li></ul></article>
           <article class="pricing-card vip-card"><div class="popular-chip">ĐỀ XUẤT</div><span class="plan-badge vip">VIP</span><h2 id="vipPrice">200.000 ₫</h2><p>/ tháng</p><ul><li><strong>Không giới hạn quota trong app</strong></li><li>Xuất batch toàn bộ</li><li>Tất cả tính năng xử lý ảnh</li><li>Huy hiệu VIP</li><li>Ưu tiên hỗ trợ</li></ul></article>
         </div>
 
-        <div class="payment-layout">
-          <article class="content-card qr-card"><div class="card-heading"><div><span class="eyebrow">THANH TOÁN QR</span><h2>Chuyển khoản 1 tháng VIP</h2></div></div><img id="paymentQr" class="payment-qr" src="assets/payment/payment-qr.png" alt="QR thanh toán VIP" /><p class="qr-replace-note">QR này thay bằng file <code>assets/payment/payment-qr.png</code>.</p></article>
-          <article class="content-card payment-info-card"><span class="eyebrow">THÔNG TIN CHUYỂN KHOẢN</span><div class="payment-info-row"><span>Ngân hàng</span><strong id="paymentBank">—</strong></div><div class="payment-info-row"><span>Chủ tài khoản</span><strong id="paymentAccountName">—</strong></div><div class="payment-info-row"><span>Số tài khoản</span><strong id="paymentAccountNumber">—</strong></div><div class="payment-content-box"><span>Nội dung bắt buộc</span><strong id="paymentContent">NTSVIP USER</strong><button id="copyPaymentContent" class="mini-button" type="button">Sao chép</button></div><p id="paymentSupport" class="muted"></p></article>
+        <section class="payment-wizard content-card">
+          <div class="card-heading payment-wizard-heading"><div><span class="eyebrow">BƯỚC 1 · CHỌN GÓI</span><h2>Thời hạn VIP</h2><p>Giá được tính từ mức giá tháng do quản trị viên cấu hình.</p></div><div class="payment-total"><span>Tổng thanh toán</span><strong id="paymentAmount">200.000 ₫</strong><small id="selectedPlanMonths">1 tháng VIP</small></div></div>
+          <div id="vipDurationSelector" class="duration-selector" role="group" aria-label="Chọn thời hạn VIP">
+            <button class="duration-option active" type="button" data-months="1"><strong>1 tháng</strong><span id="price1Month">200.000 ₫</span></button>
+            <button class="duration-option" type="button" data-months="3"><strong>3 tháng</strong><span id="price3Month">600.000 ₫</span></button>
+            <button class="duration-option" type="button" data-months="6"><strong>6 tháng</strong><span id="price6Month">1.200.000 ₫</span></button>
+            <button class="duration-option" type="button" data-months="12"><strong>12 tháng</strong><span id="price12Month">2.400.000 ₫</span></button>
+          </div>
+        </section>
+
+        <div class="payment-layout smart-payment-layout">
+          <article class="content-card qr-card smart-qr-card">
+            <div class="card-heading"><div><span class="eyebrow">BƯỚC 2 · QUÉT QR</span><h2>Chuyển khoản ngân hàng</h2></div><span class="secure-chip">QR TĨNH</span></div>
+            <div class="qr-stage"><img id="paymentQr" class="payment-qr" src="assets/payment/payment-qr.png" alt="QR thanh toán VIP" /></div>
+            <p class="qr-replace-note">Quét QR của bạn, sau đó nhập đúng <strong>số tiền</strong> và <strong>nội dung</strong> ở bên cạnh. File QR: <code>assets/payment/payment-qr.png</code>.</p>
+          </article>
+          <article class="content-card payment-info-card smart-payment-info">
+            <div class="card-heading"><div><span class="eyebrow">THÔNG TIN ĐỐI SOÁT</span><h2>Chuyển đúng 3 thông tin</h2></div></div>
+            <div class="smart-pay-row"><div><span>Ngân hàng</span><strong id="paymentBank">—</strong></div></div>
+            <div class="smart-pay-row"><div><span>Chủ tài khoản</span><strong id="paymentAccountName">—</strong></div></div>
+            <div class="smart-pay-row copy-row"><div><span>Số tài khoản</span><strong id="paymentAccountNumber">—</strong></div><button id="copyPaymentAccount" class="mini-button" type="button">Sao chép</button></div>
+            <div class="smart-pay-row copy-row emphasis"><div><span>Số tiền</span><strong id="paymentAmountCopy">200.000 ₫</strong></div><button id="copyPaymentAmount" class="mini-button" type="button">Sao chép</button></div>
+            <div class="payment-content-box"><span>Nội dung chuyển khoản bắt buộc</span><strong id="paymentContent">NTSVIP-USER</strong><button id="copyPaymentContent" class="mini-button" type="button">Sao chép</button></div>
+            <div class="payment-quick-actions"><button id="sharePaymentDetails" class="secondary-button compact" type="button">Chia sẻ thông tin</button><button id="markTransferredButton" class="primary-button compact" type="button">Tôi đã chuyển khoản</button></div>
+            <p id="paymentSupport" class="muted payment-support"></p>
+          </article>
         </div>
 
-        <form id="vipPaymentForm" class="content-card payment-submit-card">
-          <div class="card-heading"><div><span class="eyebrow">XÁC NHẬN THANH TOÁN</span><h2>Gửi yêu cầu kích hoạt VIP</h2><p>Sau khi chuyển khoản, gửi mã giao dịch hoặc ảnh minh chứng. Admin duyệt sẽ tự cộng 1 tháng VIP.</p></div></div>
-          <div class="form-grid two-col"><div class="field"><label for="paymentReference">Mã giao dịch / nội dung</label><div class="input-shell"><input id="paymentReference" maxlength="120" placeholder="Ví dụ: FT123456 hoặc NTSVIP..." /></div></div><div class="field"><label for="paymentProof">Ảnh minh chứng</label><div class="input-shell file-shell"><input id="paymentProof" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" /></div></div></div>
+        <form id="vipPaymentForm" class="content-card payment-submit-card smart-payment-confirm">
+          <div class="card-heading"><div><span class="eyebrow">BƯỚC 3 · XÁC NHẬN</span><h2>Gửi yêu cầu kích hoạt VIP</h2><p>Mã đơn và số tiền đã được hệ thống tạo sẵn. Mã giao dịch ngân hàng giúp admin đối soát nhanh hơn; ảnh minh chứng là tùy chọn nhưng được khuyến nghị.</p></div><span id="paymentAutoStatus" class="payment-live-status">Sẵn sàng</span></div>
+          <div class="payment-order-summary"><span>Mã đơn</span><strong id="paymentOrderCode">NTSVIP-USER</strong><span>Thời hạn</span><strong id="paymentOrderMonths">1 tháng</strong><span>Số tiền</span><strong id="paymentOrderAmount">200.000 ₫</strong></div>
+          <div class="form-grid two-col"><div class="field"><label for="paymentTransactionCode">Mã giao dịch ngân hàng <span class="muted">(nếu có)</span></label><div class="input-shell"><input id="paymentTransactionCode" maxlength="120" placeholder="Ví dụ: FT123456789" /></div></div><div class="field"><label for="paymentProof">Ảnh/PDF minh chứng</label><div class="input-shell file-shell"><input id="paymentProof" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" /></div></div></div>
           <div class="field"><label for="paymentNote">Ghi chú</label><textarea id="paymentNote" maxlength="500" rows="3" placeholder="Ghi chú thêm cho quản trị viên (nếu có)"></textarea></div>
-          <button id="submitPaymentButton" class="primary-button" type="submit">Gửi yêu cầu VIP</button>
+          <div class="payment-submit-actions"><div class="payment-trust-note"><span>✓</span><p>Admin duyệt yêu cầu sẽ tự cộng đúng số tháng đã chọn. Trang tự kiểm tra lại trạng thái khi bạn đang mở.</p></div><button id="submitPaymentButton" class="primary-button" type="submit">Gửi yêu cầu xác nhận</button></div>
         </form>
-        <div class="content-card"><div class="card-heading"><div><span class="eyebrow">LỊCH SỬ</span><h2>Yêu cầu nâng cấp</h2></div></div><div id="paymentHistory"><p class="muted">Chưa có yêu cầu.</p></div></div>
+        <div class="content-card payment-history-card"><div class="card-heading"><div><span class="eyebrow">LỊCH SỬ & TRẠNG THÁI</span><h2>Yêu cầu nâng cấp</h2></div><button id="refreshPaymentHistory" class="secondary-button compact" type="button">↻ Kiểm tra</button></div><div id="paymentHistory"><p class="muted">Chưa có yêu cầu.</p></div></div>
       </div>
     </section>
 
@@ -461,13 +484,19 @@
 
         <div class="content-card admin-section"><div class="admin-section-head"><div><span class="eyebrow">THANH TOÁN</span><h2>Duyệt yêu cầu VIP</h2></div><select id="adminPaymentFilter"><option value="pending">Chờ duyệt</option><option value="approved">Đã duyệt</option><option value="rejected">Từ chối</option><option value="all">Tất cả</option></select></div><div id="adminPaymentsList" class="admin-payments-list"><div class="empty-admin-card">Đang tải...</div></div></div>
 
-        <form id="adminSettingsForm" class="content-card admin-section">
-          <div class="admin-section-head"><div><span class="eyebrow">DỊCH VỤ</span><h2>Cấu hình gói & thanh toán</h2></div><button id="saveAdminSettings" class="primary-button compact" type="submit">Lưu cấu hình</button></div>
-          <div class="form-grid two-col"><div class="field"><label for="adminFreeLimit">Quota Free / tháng</label><input id="adminFreeLimit" type="number" min="0" max="100000" required /></div><div class="field"><label for="adminVipPrice">Giá VIP / tháng (VND)</label><input id="adminVipPrice" type="number" min="0" step="1000" required /></div></div>
-          <div class="form-grid two-col"><div class="field"><label for="adminBankName">Ngân hàng</label><input id="adminBankName" maxlength="100" /></div><div class="field"><label for="adminAccountName">Tên chủ tài khoản</label><input id="adminAccountName" maxlength="120" /></div></div>
-          <div class="form-grid two-col"><div class="field"><label for="adminAccountNumber">Số tài khoản</label><input id="adminAccountNumber" maxlength="60" /></div><div class="field"><label for="adminTransferPrefix">Tiền tố nội dung CK</label><input id="adminTransferPrefix" maxlength="30" /></div></div>
-          <div class="field"><label for="adminSupportText">Thông báo hỗ trợ</label><textarea id="adminSupportText" maxlength="500" rows="3"></textarea></div>
-          <p class="section-note">Ảnh QR không lưu trong database. Thay trực tiếp file <code>assets/payment/payment-qr.png</code> để tránh lộ quyền upload asset quan trọng cho client.</p>
+        <form id="adminSettingsForm" class="content-card admin-section service-settings-card">
+          <div class="admin-section-head service-settings-head"><div><span class="eyebrow">DỊCH VỤ & THANH TOÁN</span><h2>Trung tâm cấu hình thương mại</h2><p>Quản lý quota, giá VIP và thông tin nhận tiền. Thay đổi được phản ánh ngay trên trang VIP.</p></div><div class="settings-save-wrap"><span id="adminSettingsDirty" class="settings-dirty">Đã đồng bộ</span><button id="saveAdminSettings" class="primary-button compact" type="submit">Lưu thay đổi</button></div></div>
+          <div class="service-preview-grid">
+            <article class="service-preview free"><span>FREE</span><strong id="adminFreePreview">10 ảnh/tháng</strong><small>Quota mặc định</small></article>
+            <article class="service-preview vip"><span>VIP</span><strong id="adminVipPreview">200.000 ₫/tháng</strong><small>Không giới hạn quota</small></article>
+            <article class="service-preview bank"><span>NHẬN TIỀN</span><strong id="adminBankPreview">Chưa cấu hình</strong><small id="adminAccountPreview">—</small></article>
+          </div>
+          <div class="admin-settings-grid">
+            <section class="settings-subcard"><div class="settings-subhead"><span class="settings-icon">◇</span><div><strong>Gói dịch vụ</strong><small>Quyền lợi cơ bản và giá bán</small></div></div><div class="form-grid two-col"><div class="field"><label for="adminFreeLimit">Quota Free / tháng</label><input id="adminFreeLimit" type="number" min="0" max="100000" required /></div><div class="field"><label for="adminVipPrice">Giá VIP / tháng (VND)</label><input id="adminVipPrice" type="number" min="0" step="1000" required /></div></div><div class="settings-tip">VIP nhiều tháng được tính tự động theo giá tháng × số tháng. Admin duyệt sẽ cộng đúng thời hạn hội viên mua.</div></section>
+            <section class="settings-subcard"><div class="settings-subhead"><span class="settings-icon">₫</span><div><strong>Tài khoản nhận tiền</strong><small>Hiển thị cho người mua VIP</small></div></div><div class="form-grid two-col"><div class="field"><label for="adminBankName">Ngân hàng</label><input id="adminBankName" maxlength="100" placeholder="Ví dụ: MB Bank" /></div><div class="field"><label for="adminAccountName">Tên chủ tài khoản</label><input id="adminAccountName" maxlength="120" /></div></div><div class="form-grid two-col"><div class="field"><label for="adminAccountNumber">Số tài khoản</label><input id="adminAccountNumber" maxlength="60" inputmode="numeric" /></div><div class="field"><label for="adminTransferPrefix">Tiền tố nội dung CK</label><input id="adminTransferPrefix" maxlength="16" placeholder="NTSVIP" /></div></div></section>
+            <section class="settings-subcard qr-admin-subcard"><div class="settings-subhead"><span class="settings-icon">▦</span><div><strong>QR thanh toán</strong><small>Admin có thể thay QR PNG trực tiếp, không cần sửa GitHub</small></div></div><div class="admin-qr-preview-row"><img id="adminQrPreview" src="assets/payment/payment-qr.png" alt="QR hiện tại" /><div><strong id="adminQrSource">QR mặc định trong package</strong><p id="adminQrStatus">Khuyên dùng PNG vuông, rõ nét, tối đa 5 MB.</p><div class="admin-qr-actions"><label class="secondary-button compact qr-upload-button">Chọn QR PNG<input id="adminQrInput" type="file" accept="image/png" hidden /></label><button id="resetAdminQr" class="text-button" type="button">Dùng QR mặc định</button></div></div></div></section>
+            <section class="settings-subcard"><div class="settings-subhead"><span class="settings-icon">i</span><div><strong>Thông báo hỗ trợ</strong><small>Hiển thị dưới thông tin chuyển khoản</small></div></div><div class="field"><label for="adminSupportText">Nội dung</label><textarea id="adminSupportText" maxlength="500" rows="4" placeholder="Ví dụ: Yêu cầu thường được duyệt trong 5-30 phút..."></textarea></div><div class="settings-tip success">Thanh toán hiện là chuyển khoản + đối soát mã đơn + admin duyệt. Muốn kích hoạt VIP tự động ngay khi tiền vào cần API/webhook ngân hàng hoặc cổng thanh toán.</div></section>
+          </div>
         </form>
       </div>
     </section>
@@ -487,8 +516,18 @@
       <div class="field"><label for="memberPasswordInput"><span id="memberPasswordLabel">Mật khẩu mới</span></label><input id="memberPasswordInput" type="password" minlength="8" autocomplete="new-password" placeholder="Để trống nếu không đổi · tối thiểu 8 ký tự" /><small id="memberPasswordHint" class="muted">Khi tạo tài khoản mới, mật khẩu là bắt buộc.</small></div>
       <div class="admin-modal-danger-row"><button id="deleteMemberButton" class="danger-soft-button" type="button">Xóa hội viên</button><button id="resetMemberUsageButton" class="secondary-button" type="button">Reset lượt tháng này</button></div>
       <div class="modal-action-grid"><button id="cancelMemberButton" class="secondary-button" type="button">Hủy</button><button id="saveMemberButton" class="primary-button" type="submit">Lưu hội viên</button></div>
-      <p id="adminUsersFunctionHint" class="section-note">Thêm/xóa/đổi email cần Supabase Edge Function <code>admin-users</code>. V3.1 đã kèm sẵn source và hướng dẫn deploy.</p>
+      <p id="adminUsersFunctionHint" class="section-note">Thêm/xóa/đổi email cần Supabase Edge Function <code>admin-users</code>. V3.2 tiếp tục dùng Edge Function admin-users đã có từ V3.1.</p>
     </form>
+  </div>
+
+  <div id="systemDialog" class="modal-backdrop hidden system-dialog" role="dialog" aria-modal="true" aria-labelledby="systemDialogTitle">
+    <div class="modal-card compact-dialog-card">
+      <div class="dialog-symbol">?</div>
+      <h2 id="systemDialogTitle">Xác nhận</h2>
+      <p id="systemDialogMessage"></p>
+      <input id="systemDialogInput" class="dialog-input hidden" type="text" autocomplete="off" />
+      <div class="modal-action-grid"><button id="systemDialogCancel" class="secondary-button" type="button">Hủy</button><button id="systemDialogConfirm" class="primary-button" type="button">Xác nhận</button></div>
+    </div>
   </div>
 
   <div id="forgotModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="forgotTitle">

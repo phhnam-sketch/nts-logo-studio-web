@@ -1,8 +1,9 @@
 (() => {
   "use strict";
-  // V3.1: responsive member management + safe CRUD via Supabase Edge Function.
+  // V3.2: responsive member management + smart payment review + premium service settings.
   const $ = id => document.getElementById(id);
   const NTS = window.NTS = window.NTS || {};
+  const cfg = window.APP_CONFIG || {};
   const state = { members: [], payments: [], stats: null, loading: false, modalProfile: null };
   const client = () => NTS.supabase;
   const toast = (t, m, k = "info", d) => NTS.showToast?.(t, m, k, d);
@@ -64,8 +65,12 @@
 
   async function loadPayments() {
     const filter = $("adminPaymentFilter")?.value || "pending";
-    const { data, error } = await client().rpc("admin_list_payments", { p_status: filter }); if (error) throw error;
-    state.payments = data || []; await renderPayments();
+    let result = await client().rpc("admin_list_payments_v32", { p_status: filter });
+    if (result.error && /admin_list_payments_v32|schema cache|function/i.test(String(result.error.message || result.error))) {
+      result = await client().rpc("admin_list_payments", { p_status: filter });
+    }
+    if (result.error) throw result.error;
+    state.payments = result.data || []; await renderPayments();
   }
   async function proofUrl(path) {
     if (!path) return null;
@@ -78,7 +83,15 @@
     const cards = [];
     for (const p of state.payments) {
       const url = await proofUrl(p.proof_path);
-      cards.push(`<article class="admin-payment-card"><div class="admin-payment-head"><div><strong>${esc(p.display_name)}</strong><span>${esc(p.email)}</span></div><span class="request-status ${p.status}">${p.status === "pending" ? "Chờ duyệt" : p.status === "approved" ? "Đã duyệt" : "Từ chối"}</span></div><div class="admin-payment-grid"><span>Số tiền<strong>${money(p.amount)}</strong></span><span>Nội dung<strong>${esc(p.reference || "—")}</strong></span><span>Ngày gửi<strong>${dt(p.created_at)}</strong></span></div>${p.note ? `<p class="admin-note">${esc(p.note)}</p>` : ""}${url ? `<a class="proof-link" href="${url}" target="_blank" rel="noopener">Xem minh chứng thanh toán ↗</a>` : '<span class="muted">Không có minh chứng</span>'}${p.status === "pending" ? `<div class="admin-payment-actions"><button class="primary-button compact" data-payment-approve="${p.payment_id}" type="button">✓ Duyệt +1 tháng VIP</button><button class="danger-soft-button compact" data-payment-reject="${p.payment_id}" type="button">Từ chối</button></div>` : `${p.admin_note ? `<small>Admin: ${esc(p.admin_note)}</small>` : ""}`}</article>`);
+      const months = Math.max(1, Number(p.months || 1));
+      const statusLabel = p.status === "pending" ? "Chờ duyệt" : p.status === "approved" ? "Đã duyệt" : p.status === "rejected" ? "Từ chối" : "Đã hủy";
+      cards.push(`<article class="admin-payment-card premium-payment-card">
+        <div class="admin-payment-head"><div><strong>${esc(p.display_name)}</strong><span>${esc(p.email)}</span></div><span class="request-status ${p.status}">${statusLabel}</span></div>
+        <div class="payment-review-summary"><div><span>Gói mua</span><strong>${months} tháng VIP</strong></div><div><span>Số tiền</span><strong>${money(p.amount)}</strong></div><div><span>Mã đơn</span><strong>${esc(p.reference || "—")}</strong></div><div><span>Mã giao dịch</span><strong>${esc(p.transaction_code || "—")}</strong></div><div><span>Ngày gửi</span><strong>${dt(p.created_at)}</strong></div></div>
+        ${p.note ? `<p class="admin-note">${esc(p.note)}</p>` : ""}
+        <div class="payment-proof-row">${url ? `<a class="proof-link" href="${url}" target="_blank" rel="noopener">Xem minh chứng thanh toán ↗</a>` : '<span class="muted">Không có minh chứng</span>'}</div>
+        ${p.status === "pending" ? `<div class="admin-payment-actions"><button class="primary-button compact" data-payment-approve="${p.payment_id}" type="button">✓ Duyệt +${months} tháng VIP</button><button class="danger-soft-button compact" data-payment-reject="${p.payment_id}" type="button">Từ chối</button></div>` : `${p.admin_note ? `<small class="admin-review-note">Admin: ${esc(p.admin_note)}</small>` : ""}`}
+      </article>`);
     }
     wrap.innerHTML = cards.join("");
   }
@@ -212,7 +225,9 @@
     const uid = $("memberModalUserId").value;
     const email = $("memberEmailInput").value.trim();
     if (!uid) return;
-    const typed = prompt(`Xóa tài khoản sẽ xóa Auth + hồ sơ + membership + dữ liệu liên quan.\n\nNhập chính xác email để xác nhận:\n${email}`, "");
+    const typed = NTS.dialog?.prompt
+      ? await NTS.dialog.prompt({ title: "Xóa hội viên?", message: `Hành động này xóa tài khoản Auth và dữ liệu liên quan. Nhập chính xác email ${email} để xác nhận.`, confirmText: "Xóa vĩnh viễn", inputPlaceholder: email, danger: true })
+      : window.prompt(`Nhập chính xác email để xóa: ${email}`, "");
     if (typed !== email) { if (typed !== null) toast("Đã hủy xóa", "Email xác nhận không khớp.", "warning"); return; }
     const btn = $("deleteMemberButton"); btn.disabled = true;
     try {
@@ -225,11 +240,85 @@
   }
 
   async function reviewPayment(id, action) {
-    const label = action === "approve" ? "DUYỆT thanh toán và cộng 1 tháng VIP" : "TỪ CHỐI yêu cầu này";
-    if (!confirm(`Xác nhận ${label}?`)) return;
-    let note = ""; if (action === "reject") note = prompt("Lý do từ chối (có thể để trống):", "") || "";
-    try { const { error } = await client().rpc("admin_review_payment", { p_request_id: id, p_action: action, p_admin_note: note || null }); if (error) throw error; toast(action === "approve" ? "Đã kích hoạt VIP" : "Đã từ chối", action === "approve" ? "Hội viên đã được cộng thêm 1 tháng VIP." : "Yêu cầu đã được cập nhật.", action === "approve" ? "success" : "warning"); await refresh(); }
-    catch (error) { toast("Không xử lý được thanh toán", error.message || String(error), "error", 7000); }
+    const payment = state.payments.find(p => p.payment_id === id);
+    const months = Math.max(1, Number(payment?.months || 1));
+    const approved = action === "approve";
+    const ok = NTS.dialog?.confirm
+      ? await NTS.dialog.confirm({ title: approved ? "Duyệt thanh toán VIP?" : "Từ chối thanh toán?", message: approved ? `Xác nhận ${money(payment?.amount)} và cộng ${months} tháng VIP cho ${payment?.email || "hội viên"}.` : `Yêu cầu của ${payment?.email || "hội viên"} sẽ bị từ chối.`, confirmText: approved ? `Duyệt +${months} tháng` : "Từ chối", danger: !approved })
+      : window.confirm(approved ? `Duyệt và cộng ${months} tháng VIP?` : "Từ chối yêu cầu này?");
+    if (!ok) return;
+    let note = "";
+    if (!approved) {
+      note = NTS.dialog?.prompt ? await NTS.dialog.prompt({ title: "Lý do từ chối", message: "Ghi lý do để hội viên biết cần bổ sung gì. Có thể để trống.", confirmText: "Xác nhận từ chối", inputPlaceholder: "Ví dụ: Chưa thấy giao dịch...", danger: true }) : window.prompt("Lý do từ chối (có thể để trống):", "");
+      if (note === null) return;
+    }
+    try {
+      const { error } = await client().rpc("admin_review_payment", { p_request_id: id, p_action: action, p_admin_note: note || null });
+      if (error) throw error;
+      toast(approved ? "VIP đã được kích hoạt" : "Đã từ chối yêu cầu", approved ? `Hội viên được cộng chính xác ${months} tháng VIP.` : "Trạng thái và ghi chú đã được cập nhật.", approved ? "success" : "warning", 6200);
+      await refresh();
+    } catch (error) { toast("Không xử lý được thanh toán", error.message || String(error), "error", 8000); }
+  }
+
+  function updateServicePreview({ dirty = true } = {}) {
+    const free = Number($("adminFreeLimit")?.value || 0);
+    const price = Number($("adminVipPrice")?.value || 0);
+    const bank = $("adminBankName")?.value?.trim() || "Chưa cấu hình";
+    const account = $("adminAccountNumber")?.value?.trim() || "—";
+    if ($("adminFreePreview")) $("adminFreePreview").textContent = `${Math.max(0, free).toLocaleString("vi-VN")} ảnh/tháng`;
+    if ($("adminVipPreview")) $("adminVipPreview").textContent = `${money(Math.max(0, price))}/tháng`;
+    if ($("adminBankPreview")) $("adminBankPreview").textContent = bank;
+    if ($("adminAccountPreview")) $("adminAccountPreview").textContent = account;
+    const badge = $("adminSettingsDirty");
+    if (badge) { badge.textContent = dirty ? "Có thay đổi chưa lưu" : "Đã đồng bộ"; badge.classList.toggle("dirty", dirty); }
+  }
+
+  function fallbackPaymentQr() { return cfg.MEMBERSHIP?.paymentQrUrl || "assets/payment/payment-qr.png"; }
+  function renderAdminQr(url) {
+    const custom = Boolean(url);
+    if ($("adminQrPreview")) $("adminQrPreview").src = url || fallbackPaymentQr();
+    if ($("adminQrSource")) $("adminQrSource").textContent = custom ? "QR đang lưu trên Supabase" : "QR mặc định trong package";
+    if ($("adminQrStatus")) $("adminQrStatus").textContent = custom ? "Thay đổi có hiệu lực ngay trên trang VIP. Upload lại PNG nếu muốn cập nhật QR." : "Khuyên dùng PNG vuông, rõ nét, tối đa 5 MB.";
+  }
+
+  async function uploadAdminQr(file) {
+    if (!file) return;
+    if (file.type !== "image/png") return toast("QR phải là PNG", "Hãy chọn file PNG để giữ QR sắc nét và ổn định trên mọi thiết bị.", "warning", 6000);
+    if (file.size > 5 * 1024 * 1024) return toast("QR quá lớn", "File QR tối đa 5 MB.", "warning");
+    const status = $("adminQrStatus");
+    if (status) status.textContent = "Đang tải QR lên Supabase...";
+    try {
+      const path = "payment/payment-qr.png";
+      const { error: uploadError } = await client().storage.from("site-assets").upload(path, file, { upsert: true, cacheControl: "0", contentType: "image/png" });
+      if (uploadError) throw uploadError;
+      const { data } = client().storage.from("site-assets").getPublicUrl(path);
+      if (!data?.publicUrl) throw new Error("Không tạo được URL QR sau khi upload.");
+      const url = `${data.publicUrl}${data.publicUrl.includes("?") ? "&" : "?"}v=${Date.now()}`;
+      const { error: updateError } = await client().from("site_settings").update({ payment_qr_url: url }).eq("id", true);
+      if (updateError) throw updateError;
+      renderAdminQr(url);
+      await NTS.membership?.loadSettings?.();
+      toast("QR thanh toán đã cập nhật", "Trang VIP đã chuyển sang QR mới mà không cần deploy GitHub.", "success", 6200);
+    } catch (error) {
+      console.error(error);
+      const msg = String(error?.message || error);
+      if (/site-assets|row-level security|policy|column.*payment_qr_url|schema cache/i.test(msg)) {
+        toast("Chưa bật Smart QR V3.2", "Hãy chạy migration `supabase/003_v3_2_profile_payment.sql` trong Supabase rồi thử lại.", "error", 9000);
+      } else toast("Không cập nhật được QR", msg, "error", 8000);
+    } finally { if ($("adminQrInput")) $("adminQrInput").value = ""; }
+  }
+
+  async function resetAdminQr() {
+    const ok = NTS.dialog?.confirm ? await NTS.dialog.confirm({ title: "Dùng lại QR mặc định?", message: "QR Supabase hiện tại sẽ được bỏ khỏi cấu hình. Trang VIP quay về assets/payment/payment-qr.png trong website.", confirmText: "Dùng QR mặc định" }) : window.confirm("Dùng lại QR mặc định?");
+    if (!ok) return;
+    try {
+      const { error } = await client().from("site_settings").update({ payment_qr_url: null }).eq("id", true);
+      if (error) throw error;
+      await client().storage.from("site-assets").remove(["payment/payment-qr.png"]).catch(() => {});
+      renderAdminQr(null);
+      await NTS.membership?.loadSettings?.();
+      toast("Đã dùng QR mặc định", "Trang VIP đã quay về QR PNG nằm trong package website.", "success");
+    } catch (error) { toast("Không reset được QR", error.message || String(error), "error", 8000); }
   }
 
   async function loadServiceSettings() {
@@ -241,23 +330,29 @@
     if ($("adminAccountNumber")) $("adminAccountNumber").value = data.account_number || "";
     if ($("adminTransferPrefix")) $("adminTransferPrefix").value = data.transfer_prefix || "";
     if ($("adminSupportText")) $("adminSupportText").value = data.support_text || "";
+    renderAdminQr(data.payment_qr_url || null);
+    updateServicePreview({ dirty: false });
   }
 
   async function saveServiceSettings(event) {
-    event.preventDefault(); const btn = $("saveAdminSettings"); btn.disabled = true;
+    event.preventDefault(); const btn = $("saveAdminSettings"); btn.disabled = true; btn.textContent = "Đang lưu...";
     try {
-      const payload = { free_monthly_limit: Number($("adminFreeLimit").value), vip_monthly_price: Number($("adminVipPrice").value), bank_name: $("adminBankName").value.trim(), account_name: $("adminAccountName").value.trim(), account_number: $("adminAccountNumber").value.trim(), transfer_prefix: $("adminTransferPrefix").value.trim() || "NTSVIP", support_text: $("adminSupportText").value.trim() };
-      if (!Number.isInteger(payload.free_monthly_limit) || payload.free_monthly_limit < 0) throw new Error("Quota Free không hợp lệ.");
+      const payload = { free_monthly_limit: Number($("adminFreeLimit").value), vip_monthly_price: Number($("adminVipPrice").value), bank_name: $("adminBankName").value.trim(), account_name: $("adminAccountName").value.trim(), account_number: $("adminAccountNumber").value.trim(), transfer_prefix: $("adminTransferPrefix").value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 16) || "NTSVIP", support_text: $("adminSupportText").value.trim() };
+      if (!Number.isInteger(payload.free_monthly_limit) || payload.free_monthly_limit < 0 || payload.free_monthly_limit > 100000) throw new Error("Quota Free không hợp lệ.");
       if (!Number.isInteger(payload.vip_monthly_price) || payload.vip_monthly_price < 0) throw new Error("Giá VIP không hợp lệ.");
+      if (!payload.bank_name || !payload.account_name || !payload.account_number) throw new Error("Hãy điền đủ ngân hàng, tên chủ tài khoản và số tài khoản.");
       const { error } = await client().from("site_settings").update(payload).eq("id", true); if (error) throw error;
-      toast("Đã lưu cấu hình", "Giá VIP, quota và thông tin chuyển khoản đã được cập nhật.", "success");
+      updateServicePreview({ dirty: false });
+      toast("Cấu hình dịch vụ đã lưu", "Giá, quota và thông tin thanh toán đã đồng bộ sang trang VIP.", "success", 5600);
       await NTS.membership?.loadSettings?.(); await NTS.membership?.refreshAccount?.({ silent: true });
-    } catch (error) { toast("Không lưu được cấu hình", error.message || String(error), "error", 7000); }
-    finally { btn.disabled = false; }
+    } catch (error) { toast("Không lưu được cấu hình", error.message || String(error), "error", 8000); }
+    finally { btn.disabled = false; btn.textContent = "Lưu thay đổi"; }
   }
 
   async function resetMemberUsage() {
-    const uid = $("memberModalUserId").value; if (!uid || !confirm("Reset toàn bộ lượt Free đã dùng của hội viên trong tháng này?")) return;
+    const uid = $("memberModalUserId").value; if (!uid) return;
+    const ok = NTS.dialog?.confirm ? await NTS.dialog.confirm({ title: "Reset quota tháng?", message: "Toàn bộ lượt Free đã dùng của hội viên trong tháng hiện tại sẽ về 0.", confirmText: "Reset quota" }) : window.confirm("Reset toàn bộ lượt Free đã dùng của hội viên trong tháng này?");
+    if (!ok) return;
     const btn = $("resetMemberUsageButton"); btn.disabled = true;
     try { const { error } = await client().rpc("admin_reset_usage", { p_user_id: uid }); if (error) throw error; toast("Đã reset quota", "Lượt đã dùng tháng này đã về 0.", "success"); await refresh(); }
     catch (error) { toast("Không reset được quota", error.message || String(error), "error"); }
@@ -279,6 +374,9 @@
   $("deleteMemberButton")?.addEventListener("click", deleteMember);
   $("resetMemberUsageButton")?.addEventListener("click", resetMemberUsage);
   $("adminSettingsForm")?.addEventListener("submit", saveServiceSettings);
+  $("adminSettingsForm")?.addEventListener("input", () => updateServicePreview({ dirty: true }));
+  $("adminQrInput")?.addEventListener("change", e => uploadAdminQr(e.target.files?.[0]));
+  $("resetAdminQr")?.addEventListener("click", resetAdminQr);
 
   window.addEventListener("nts:membership-updated", e => { if (e.detail.account?.role === "admin" && !$("adminPage")?.classList.contains("hidden")) refresh(); });
   NTS.admin = { state, refresh, loadMembers, loadPayments, loadServiceSettings, openCreateMemberModal };

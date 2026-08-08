@@ -20,17 +20,76 @@
 
   let mode = "login";
   let client = null;
-  let toastTimer = null;
+  const toastTimers = new WeakMap();
+
+  function toastIcon(kind) {
+    return kind === "success" ? "✓" : kind === "error" ? "×" : kind === "warning" ? "!" : "i";
+  }
+
+  function dismissToast(el) {
+    if (!el) return;
+    const timer = toastTimers.get(el);
+    if (timer) clearTimeout(timer);
+    el.classList.add("leaving");
+    window.setTimeout(() => el.remove(), 220);
+  }
 
   function showToast(title, message, kind = "info", duration = 4300) {
-    const toast = $("globalToast");
-    if (!toast) return;
-    $("toastTitle").textContent = title;
-    $("toastMessage").textContent = message || "";
-    $("toastIcon").textContent = kind === "success" ? "✓" : kind === "error" ? "!" : kind === "warning" ? "!" : "i";
-    toast.className = `toast ${kind} show`;
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toast.classList.remove("show"), duration);
+    const stack = $("toastStack") || document.body;
+    const el = document.createElement("article");
+    el.className = `toast ${kind}`;
+    el.setAttribute("role", kind === "error" ? "alert" : "status");
+    el.innerHTML = `
+      <div class="toast-icon">${toastIcon(kind)}</div>
+      <div class="toast-copy"><strong></strong><span></span></div>
+      <button class="toast-close" type="button" aria-label="Đóng thông báo">×</button>
+      <span class="toast-progress" aria-hidden="true"></span>`;
+    el.querySelector("strong").textContent = title || "Thông báo";
+    el.querySelector(".toast-copy span").textContent = message || "";
+    el.querySelector(".toast-close").addEventListener("click", () => dismissToast(el));
+    stack.append(el);
+    while (stack.children.length > 4) {
+      const oldest = stack.firstElementChild;
+      if (!oldest || oldest === el) break;
+      const oldTimer = toastTimers.get(oldest);
+      if (oldTimer) clearTimeout(oldTimer);
+      oldest.remove();
+    }
+    requestAnimationFrame(() => el.classList.add("show"));
+    const progress = el.querySelector(".toast-progress");
+    if (progress) progress.style.animationDuration = `${Math.max(1200, duration)}ms`;
+    const timer = window.setTimeout(() => dismissToast(el), Math.max(1200, duration));
+    toastTimers.set(el, timer);
+    return el;
+  }
+
+  function systemDialog({ title = "Xác nhận", message = "", confirmText = "Xác nhận", cancelText = "Hủy", danger = false, input = false, inputPlaceholder = "" } = {}) {
+    const modal = $("systemDialog");
+    if (!modal) return Promise.resolve(input ? null : false);
+    const titleEl = $("systemDialogTitle"), messageEl = $("systemDialogMessage");
+    const inputEl = $("systemDialogInput"), confirm = $("systemDialogConfirm"), cancel = $("systemDialogCancel");
+    titleEl.textContent = title;
+    messageEl.textContent = message;
+    confirm.textContent = confirmText;
+    cancel.textContent = cancelText;
+    confirm.classList.toggle("danger-button", danger);
+    inputEl.classList.toggle("hidden", !input);
+    inputEl.value = ""; inputEl.placeholder = inputPlaceholder || "";
+    modal.classList.remove("hidden");
+    document.body.classList.add("modal-open");
+    if (input) setTimeout(() => inputEl.focus(), 50); else setTimeout(() => confirm.focus(), 50);
+    return new Promise(resolve => {
+      const finish = value => {
+        modal.classList.add("hidden");
+        document.body.classList.remove("modal-open");
+        confirm.onclick = cancel.onclick = null;
+        modal.onclick = null;
+        resolve(value);
+      };
+      confirm.onclick = () => finish(input ? inputEl.value : true);
+      cancel.onclick = () => finish(input ? null : false);
+      modal.onclick = e => { if (e.target === modal) finish(input ? null : false); };
+    });
   }
 
   window.NTS = window.NTS || {};
@@ -39,10 +98,9 @@
     currentUser: null,
     supabase: null,
     configured,
-    getClient: () => client
+    getClient: () => client,
+    dialog: { confirm: (opts={}) => systemDialog(opts), prompt: (opts={}) => systemDialog({ ...opts, input: true }) }
   });
-
-  $("toastClose")?.addEventListener("click", () => $("globalToast")?.classList.remove("show"));
 
   function dispatchUser(user, event = "SIGNED_IN") {
     window.NTS.currentUser = user || null;
