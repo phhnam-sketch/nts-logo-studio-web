@@ -1,5 +1,5 @@
 /*
-  NTS Logo Studio Web V3 - CẤU HÌNH DỄ THAY ĐỔI
+  NTS Logo Studio Web V3.1 - CẤU HÌNH DỄ THAY ĐỔI
 
   1) SUPABASE_URL + SUPABASE_PUBLISHABLE_KEY:
      Supabase Dashboard > Project Settings > API / Connect.
@@ -26,7 +26,7 @@ window.APP_CONFIG = {
   SUPABASE_PUBLISHABLE_KEY: "sb_publishable___QvvAoa-1g7xxiPYXvFaw_r5vTMQ8Q",
 
   APP_NAME: "NTS Logo Studio Pro Web",
-  APP_VERSION: "3.0.0",
+  APP_VERSION: "3.1.0",
 
   BRAND: {
     shortName: "NTS",

@@ -70,7 +70,7 @@
       console.error(error);
       state.account = defaultAccount();
       renderAccount();
-      if (!silent) toast("Chưa cài database V3", "Hãy chạy file supabase/001_membership_schema.sql trong Supabase SQL Editor.", "warning", 8500);
+      if (!silent) toast("Chưa cài database V3", "Hãy chạy migration 001 và nếu đang nâng từ V3 thì chạy thêm supabase/002_v3_1_production_fix.sql trong Supabase SQL Editor.", "warning", 8500);
       return state.account;
     } finally { state.loading = false; }
   }

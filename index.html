@@ -237,9 +237,15 @@
             </div>
           </div>
 
-          <div class="preview-actions">
+          <div class="preview-actions preview-zoom-actions">
             <button id="compareToggle" class="tool-button active" type="button">◫ Before / After</button>
-            <button id="fitPreview" class="tool-button" type="button">Vừa khung</button>
+            <div class="zoom-cluster" aria-label="Điều khiển thu phóng preview">
+              <button id="zoomOutPreview" class="tool-button icon-tool" type="button" title="Thu nhỏ">−</button>
+              <button id="fitPreview" class="tool-button active" type="button" title="Căn vừa toàn bộ ảnh">Vừa khung</button>
+              <button id="actualSizePreview" class="tool-button" type="button" title="Xem gần kích thước 100%">100%</button>
+              <button id="zoomInPreview" class="tool-button icon-tool" type="button" title="Phóng to">+</button>
+              <span id="previewZoomLabel" class="zoom-label">FIT</span>
+            </div>
           </div>
         </div>
 
@@ -320,15 +326,15 @@
             </div>
             <div class="control-row">
               <div class="control-copy"><label for="paddingRange">Khoảng cách lề</label><span id="paddingValue">28 px</span></div>
-              <input id="paddingRange" type="range" min="0" max="300" value="28" />
+              <input id="paddingRange" type="range" min="0" max="1200" value="28" />
             </div>
             <div class="control-row">
               <div class="control-copy"><label for="offsetXRange">Ngang X</label><span id="offsetXValue">0 px</span></div>
-              <input id="offsetXRange" type="range" min="-500" max="500" value="0" />
+              <input id="offsetXRange" type="range" min="-3000" max="3000" value="0" />
             </div>
             <div class="control-row">
               <div class="control-copy"><label for="offsetYRange">Dọc Y</label><span id="offsetYValue">0 px</span></div>
-              <input id="offsetYRange" type="range" min="-500" max="500" value="0" />
+              <input id="offsetYRange" type="range" min="-3000" max="3000" value="0" />
             </div>
             <div class="control-row">
               <div class="control-copy"><label for="rotationRange">Xoay</label><span id="rotationValue">0°</span></div>
@@ -355,7 +361,7 @@
               <button id="applySelectedButton" class="secondary-button" type="button">Áp dụng ảnh đã chọn</button>
               <button id="applyAllButton" class="secondary-button" type="button">Áp dụng tất cả</button>
             </div>
-            <p class="section-note">Mỗi ảnh có cấu hình riêng. Hai nút trên sẽ copy chính xác cấu hình đang preview sang nhóm tương ứng.</p>
+            <div class="smart-apply-note"><strong>SMART APPLY 3.1</strong><span>Khi đồng bộ nhiều ảnh, X tự scale theo chiều rộng, Y theo chiều cao và lề theo cạnh ngắn. Vì vậy ảnh ngang và ảnh dọc giữ vị trí tương đối giống nhau thay vì copy pixel cứng.</span></div>
           </section>
 
           <section class="setting-section export-section">
@@ -398,9 +404,10 @@
           <form id="profileForm" class="content-card profile-form-card">
             <div class="card-heading"><div><span class="eyebrow">HỒ SƠ</span><h2>Thông tin cá nhân</h2></div><button id="saveProfileButton" class="primary-button compact" type="submit">Lưu thay đổi</button></div>
             <div class="media-upload-grid">
-              <label class="media-upload-card"><strong>Ảnh đại diện</strong><span>JPG/PNG/WebP · tối đa 5 MB</span><input id="profileAvatarInput" type="file" accept="image/jpeg,image/png,image/webp" /><em>Chọn ảnh</em></label>
-              <label class="media-upload-card"><strong>Ảnh bìa</strong><span>Khuyên dùng tỷ lệ ngang 16:5</span><input id="profileCoverInput" type="file" accept="image/jpeg,image/png,image/webp" /><em>Chọn ảnh</em></label>
+              <div class="media-upload-card enhanced-media-card"><div><strong>Ảnh đại diện</strong><span>Ảnh sẽ tự tối ưu trước khi tải lên. Hỗ trợ ảnh từ điện thoại nếu trình duyệt đọc được.</span></div><label class="media-file-button">Chọn ảnh<input id="profileAvatarInput" type="file" accept="image/*" /></label><button id="removeAvatarButton" class="text-button danger-text" type="button">Xóa ảnh đại diện</button></div>
+              <div class="media-upload-card enhanced-media-card"><div><strong>Ảnh bìa</strong><span>Khuyên dùng ảnh ngang. Hệ thống tự giảm kích thước để upload ổn định.</span></div><label class="media-file-button">Chọn ảnh<input id="profileCoverInput" type="file" accept="image/*" /></label><button id="removeCoverButton" class="text-button danger-text" type="button">Xóa ảnh bìa</button></div>
             </div>
+            <div id="profileMediaStatus" class="profile-media-status">Chưa có thay đổi hình ảnh.</div>
             <div class="form-grid two-col">
               <div class="field"><label for="profileDisplayName">Tên hiển thị</label><div class="input-shell"><input id="profileDisplayName" maxlength="60" required /></div></div>
               <div class="field"><label for="profileEmail">Email</label><div class="input-shell"><input id="profileEmail" type="email" readonly /></div></div>
@@ -450,7 +457,7 @@
         <div class="admin-header"><div><span class="auth-badge">ADMIN CONTROL</span><h1>Trung tâm quản trị</h1><p>Quản lý hội viên, gói VIP, quota và duyệt thanh toán.</p></div><button id="refreshAdminButton" class="secondary-button" type="button">↻ Làm mới</button></div>
         <div class="admin-stats-grid"><article><span>Tổng hội viên</span><strong id="statTotalUsers">0</strong></article><article><span>VIP</span><strong id="statVipUsers">0</strong></article><article><span>Free</span><strong id="statFreeUsers">0</strong></article><article><span>Chờ thanh toán</span><strong id="statPendingPayments">0</strong></article><article><span>Tạm khóa</span><strong id="statSuspended">0</strong></article><article><span>Doanh thu duyệt tháng</span><strong id="statRevenue">0 ₫</strong></article></div>
 
-        <div class="content-card admin-section"><div class="admin-section-head"><div><span class="eyebrow">HỘI VIÊN</span><h2>Quản lý tài khoản</h2></div><div class="search-shell admin-search"><span>⌕</span><input id="adminMemberSearch" type="search" placeholder="Tìm email hoặc tên..." /></div></div><div class="table-scroll"><table class="admin-table"><thead><tr><th>Hội viên</th><th>Gói</th><th>Trạng thái</th><th>Đã dùng</th><th>Quota riêng</th><th>VIP đến</th><th>Ngày tạo</th><th></th></tr></thead><tbody id="adminMembersBody"><tr><td colspan="8" class="table-empty">Đang tải...</td></tr></tbody></table></div></div>
+        <div class="content-card admin-section"><div class="admin-section-head admin-member-head"><div><span class="eyebrow">HỘI VIÊN</span><h2>Quản lý tài khoản</h2><p>Thêm, chỉnh sửa, khóa, reset quota hoặc xóa tài khoản từ một nơi.</p></div><div class="admin-member-tools"><div class="search-shell admin-search"><span>⌕</span><input id="adminMemberSearch" type="search" placeholder="Tìm email hoặc tên..." /></div><button id="createMemberButton" class="primary-button compact" type="button">＋ Thêm hội viên</button></div></div><div class="table-scroll desktop-member-table"><table class="admin-table"><thead><tr><th>Hội viên</th><th>Gói</th><th>Trạng thái</th><th>Đã dùng</th><th>Quota riêng</th><th>VIP đến</th><th>Ngày tạo</th><th></th></tr></thead><tbody id="adminMembersBody"><tr><td colspan="8" class="table-empty">Đang tải...</td></tr></tbody></table></div><div id="adminMembersMobile" class="admin-members-mobile"><div class="empty-admin-card">Đang tải...</div></div></div>
 
         <div class="content-card admin-section"><div class="admin-section-head"><div><span class="eyebrow">THANH TOÁN</span><h2>Duyệt yêu cầu VIP</h2></div><select id="adminPaymentFilter"><option value="pending">Chờ duyệt</option><option value="approved">Đã duyệt</option><option value="rejected">Từ chối</option><option value="all">Tất cả</option></select></div><div id="adminPaymentsList" class="admin-payments-list"><div class="empty-admin-card">Đang tải...</div></div></div>
 
@@ -472,10 +479,15 @@
   <div id="memberManageModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="memberModalName">
     <form id="memberManageForm" class="modal-card admin-member-modal">
       <button id="memberManageClose" class="modal-close" type="button" aria-label="Đóng">×</button>
-      <span class="auth-badge">MEMBER CONTROL</span><h2 id="memberModalName">Hội viên</h2><p id="memberModalEmail" class="muted"></p><input id="memberModalUserId" type="hidden" />
+      <span id="memberModalModeBadge" class="auth-badge">MEMBER CONTROL</span><h2 id="memberModalName">Hội viên</h2><p id="memberModalEmail" class="muted"></p><input id="memberModalUserId" type="hidden" /><input id="memberModalMode" type="hidden" value="edit" />
+      <div class="form-grid two-col"><div class="field"><label for="memberDisplayName">Tên hiển thị</label><input id="memberDisplayName" maxlength="60" required /></div><div class="field"><label for="memberEmailInput">Email</label><input id="memberEmailInput" type="email" required /></div></div>
+      <div class="field"><label for="memberBioInput">Bio</label><textarea id="memberBioInput" maxlength="500" rows="3" placeholder="Giới thiệu ngắn..."></textarea></div>
       <div class="form-grid two-col"><div class="field"><label for="memberStatusSelect">Trạng thái</label><select id="memberStatusSelect"><option value="active">Hoạt động</option><option value="suspended">Tạm khóa</option></select></div><div class="field"><label for="memberPlanSelect">Gói</label><select id="memberPlanSelect"><option value="free">Free</option><option value="vip">VIP</option></select></div></div>
       <div class="form-grid two-col"><div class="field"><label for="memberVipUntil">VIP đến</label><input id="memberVipUntil" type="datetime-local" /></div><div class="field"><label for="memberFreeLimit">Quota Free riêng</label><input id="memberFreeLimit" type="number" min="0" max="100000" placeholder="Trống = mặc định" /></div></div>
-      <div class="modal-action-grid"><button id="resetMemberUsageButton" class="secondary-button" type="button">Reset lượt tháng này</button><button id="saveMemberButton" class="primary-button" type="submit">Lưu quyền hội viên</button></div>
+      <div class="field"><label for="memberPasswordInput"><span id="memberPasswordLabel">Mật khẩu mới</span></label><input id="memberPasswordInput" type="password" minlength="8" autocomplete="new-password" placeholder="Để trống nếu không đổi · tối thiểu 8 ký tự" /><small id="memberPasswordHint" class="muted">Khi tạo tài khoản mới, mật khẩu là bắt buộc.</small></div>
+      <div class="admin-modal-danger-row"><button id="deleteMemberButton" class="danger-soft-button" type="button">Xóa hội viên</button><button id="resetMemberUsageButton" class="secondary-button" type="button">Reset lượt tháng này</button></div>
+      <div class="modal-action-grid"><button id="cancelMemberButton" class="secondary-button" type="button">Hủy</button><button id="saveMemberButton" class="primary-button" type="submit">Lưu hội viên</button></div>
+      <p id="adminUsersFunctionHint" class="section-note">Thêm/xóa/đổi email cần Supabase Edge Function <code>admin-users</code>. V3.1 đã kèm sẵn source và hướng dẫn deploy.</p>
     </form>
   </div>
 

@@ -1,5 +1,6 @@
 (() => {
   "use strict";
+  // V3.1: orientation-aware Smart Apply + functional preview zoom/Fit.
 
   const $ = (id) => document.getElementById(id);
   const toast = (title, message, kind = "info", duration) => window.NTS?.showToast?.(title, message, kind, duration);
@@ -41,6 +42,8 @@
     compareEnabled: true,
     renderToken: 0,
     renderRaf: 0,
+    previewZoom: 1,
+    lastFitScale: 1,
     settings: {
       pos: "SE",
       opacity: 92,
@@ -49,7 +52,13 @@
       offsetX: 0,
       offsetY: 0,
       rotation: 0,
-      keepInside: true
+      keepInside: true,
+      paddingRatio: null,
+      offsetXRatio: null,
+      offsetYRatio: null,
+      referenceWidth: null,
+      referenceHeight: null,
+      referenceShortSide: null
     }
   };
 
@@ -74,6 +83,10 @@
     splitDivider: $("splitDivider"),
     compareToggle: $("compareToggle"),
     fitPreview: $("fitPreview"),
+    zoomOutPreview: $("zoomOutPreview"),
+    zoomInPreview: $("zoomInPreview"),
+    actualSizePreview: $("actualSizePreview"),
+    previewZoomLabel: $("previewZoomLabel"),
     previewHud: $("previewHud"),
     previewHudText: $("previewHudText"),
     selectedImageStatus: $("selectedImageStatus"),
@@ -135,13 +148,49 @@
     return state.images.filter((image) => image.selected);
   }
 
-  function updateCurrentItemSettings() {
-    const item = currentItem();
-    if (item) item.settings = cloneSettings();
+  function validDimension(value) {
+    return Number.isFinite(Number(value)) && Number(value) > 0;
   }
 
-  function setSettings(settings) {
-    state.settings = cloneSettings(settings);
+  function captureRelativeSettings(settings = state.settings, item = currentItem()) {
+    const out = cloneSettings(settings);
+    const width = Number(item?.width || (state.currentBitmapId === item?.id ? state.currentBitmap?.width : 0));
+    const height = Number(item?.height || (state.currentBitmapId === item?.id ? state.currentBitmap?.height : 0));
+    if (validDimension(width) && validDimension(height)) {
+      const shortSide = Math.min(width, height);
+      out.paddingRatio = Number(out.padding || 0) / shortSide;
+      out.offsetXRatio = Number(out.offsetX || 0) / width;
+      out.offsetYRatio = Number(out.offsetY || 0) / height;
+      out.referenceWidth = width;
+      out.referenceHeight = height;
+      out.referenceShortSide = shortSide;
+    }
+    return out;
+  }
+
+  function materializeSettings(settings, width, height) {
+    const out = cloneSettings(settings);
+    if (!validDimension(width) || !validDimension(height)) return out;
+    const shortSide = Math.min(width, height);
+    if (Number.isFinite(Number(out.paddingRatio))) out.padding = Math.round(Number(out.paddingRatio) * shortSide);
+    else if (validDimension(out.referenceShortSide)) out.padding = Math.round(Number(out.padding || 0) * shortSide / Number(out.referenceShortSide));
+    if (Number.isFinite(Number(out.offsetXRatio))) out.offsetX = Math.round(Number(out.offsetXRatio) * width);
+    else if (validDimension(out.referenceWidth)) out.offsetX = Math.round(Number(out.offsetX || 0) * width / Number(out.referenceWidth));
+    if (Number.isFinite(Number(out.offsetYRatio))) out.offsetY = Math.round(Number(out.offsetYRatio) * height);
+    else if (validDimension(out.referenceHeight)) out.offsetY = Math.round(Number(out.offsetY || 0) * height / Number(out.referenceHeight));
+    out.referenceWidth = width;
+    out.referenceHeight = height;
+    out.referenceShortSide = shortSide;
+    return out;
+  }
+
+  function updateCurrentItemSettings() {
+    const item = currentItem();
+    if (item) item.settings = captureRelativeSettings(state.settings, item);
+  }
+
+  function syncSettingsControls() {
+    if (!els.opacityRange) return;
     els.opacityRange.value = String(state.settings.opacity);
     els.sizeRange.value = String(state.settings.size);
     els.paddingRange.value = String(state.settings.padding);
@@ -151,6 +200,13 @@
     els.keepInsideToggle.checked = Boolean(state.settings.keepInside);
     els.positionGrid.querySelectorAll("button[data-pos]").forEach((b) => b.classList.toggle("active", b.dataset.pos === state.settings.pos));
     syncControlLabels();
+  }
+
+  function setSettings(settings, item = currentItem()) {
+    let next = cloneSettings(settings);
+    if (item && validDimension(item.width) && validDimension(item.height)) next = materializeSettings(next, item.width, item.height);
+    state.settings = next;
+    syncSettingsControls();
   }
 
   function setBatchProgress(done, total, text) {
@@ -182,6 +238,7 @@
       seen.add(key);
       state.images.push({
         id: uniqueId(), file, url: URL.createObjectURL(file),
+        width: null, height: null,
         selected: true, status: "ready", error: "", settings: cloneSettings()
       });
       added += 1;
@@ -264,8 +321,9 @@
   function selectImage(id) {
     if (id === state.selectedId) return;
     state.selectedId = id;
+    state.previewZoom = 1;
     const item = currentItem();
-    if (item?.settings) setSettings(item.settings);
+    if (item?.settings) setSettings(item.settings, item);
     renderImageList();
     schedulePreview(true);
   }
@@ -290,6 +348,15 @@
     state.currentBitmap?.close?.();
     state.currentBitmap = bitmap;
     state.currentBitmapId = item.id;
+    item.width = bitmap.width;
+    item.height = bitmap.height;
+    if (item.settings) {
+      item.settings = materializeSettings(item.settings, bitmap.width, bitmap.height);
+      if (state.selectedId === item.id) {
+        state.settings = cloneSettings(item.settings);
+        syncSettingsControls();
+      }
+    }
     return { item, bitmap };
   }
 
@@ -333,6 +400,21 @@
     const w = Math.max(1, srcW * scale);
     const h = Math.max(1, srcH * scale);
     return { x: (boxW - w) / 2, y: (boxH - h) / 2, w, h, scale };
+  }
+
+  function previewRect(srcW, srcH, boxW, boxH, padding = 22) {
+    const fit = containRect(srcW, srcH, boxW, boxH, padding);
+    state.lastFitScale = fit.scale;
+    const zoom = Math.max(1, Math.min(8, Number(state.previewZoom) || 1));
+    const w = fit.w * zoom;
+    const h = fit.h * zoom;
+    return { x: (boxW - w) / 2, y: (boxH - h) / 2, w, h, scale: fit.scale * zoom, fitScale: fit.scale, zoom };
+  }
+
+  function updateZoomUi() {
+    const z = Math.max(1, Number(state.previewZoom) || 1);
+    if (els.previewZoomLabel) els.previewZoomLabel.textContent = z === 1 ? "FIT" : `${Math.round(z * 100)}%`;
+    if (els.fitPreview) els.fitPreview.classList.toggle("active", z === 1);
   }
 
   function createSurface(width, height) {
@@ -430,16 +512,19 @@
       const frameH = Math.max(260, els.previewStage.clientHeight);
       const beforeCtx = setupCanvas(els.beforeCanvas, frameW, frameH);
       const afterCtx = setupCanvas(els.afterCanvas, frameW, frameH);
-      const rect = containRect(current.bitmap.width, current.bitmap.height, frameW, frameH, frameW < 600 ? 10 : 22);
+      const rect = previewRect(current.bitmap.width, current.bitmap.height, frameW, frameH, frameW < 600 ? 10 : 22);
+      const renderSettings = materializeSettings(state.settings, current.bitmap.width, current.bitmap.height);
 
       drawBase(beforeCtx, current.bitmap, rect);
       drawBase(afterCtx, current.bitmap, rect);
 
       if (logo) {
-        const rotated = rotatedLogoSurface(logo, Math.min(rect.w, rect.h), state.settings.rotation);
-        const pos = watermarkPosition(rect.x, rect.y, rect.w, rect.h, rotated.width, rotated.height, rect.scale);
+        const rotated = rotatedLogoSurface(logo, Math.min(rect.w, rect.h), renderSettings.rotation, renderSettings);
+        const pos = watermarkPosition(rect.x, rect.y, rect.w, rect.h, rotated.width, rotated.height, rect.scale, renderSettings);
         afterCtx.drawImage(rotated, pos.x, pos.y);
+        cleanupSurface(rotated);
       }
+      updateZoomUi();
 
       els.beforeCanvas.style.width = `${frameW}px`;
       els.beforeCanvas.style.height = `${frameH}px`;
@@ -649,7 +734,20 @@
     toast("Đã nạp logo", file.name, "success");
   });
 
-  els.fitPreview.addEventListener("click", () => schedulePreview(true));
+  els.fitPreview.addEventListener("click", () => {
+    state.previewZoom = 1;
+    updateZoomUi();
+    schedulePreview(true);
+    toast("Đã vừa khung", "Preview đã trở về chế độ Fit và căn giữa toàn bộ ảnh.", "success", 2600);
+  });
+  els.zoomInPreview?.addEventListener("click", () => { state.previewZoom = Math.min(8, state.previewZoom * 1.25); updateZoomUi(); schedulePreview(true); });
+  els.zoomOutPreview?.addEventListener("click", () => { state.previewZoom = Math.max(1, state.previewZoom / 1.25); updateZoomUi(); schedulePreview(true); });
+  els.actualSizePreview?.addEventListener("click", () => {
+    const fitScale = Number(state.lastFitScale) || 1;
+    state.previewZoom = Math.max(1, Math.min(8, 1 / fitScale));
+    updateZoomUi();
+    schedulePreview(true);
+  });
 
   function flashButton(button, text) {
     const old = button.textContent;
@@ -667,9 +765,15 @@
       toast("Chưa có ảnh", "Hãy chọn ảnh trước khi áp dụng cấu hình.", "warning");
       return;
     }
-    const snapshot = cloneSettings();
-    items.forEach((item) => { item.settings = cloneSettings(snapshot); });
-    toast("Đã đồng bộ cấu hình", `${items.length} ảnh đã nhận đúng cấu hình đang preview.`, "success", 4600);
+    const master = currentItem();
+    const snapshot = captureRelativeSettings(state.settings, master);
+    items.forEach((item) => {
+      item.settings = validDimension(item.width) && validDimension(item.height)
+        ? materializeSettings(snapshot, item.width, item.height)
+        : cloneSettings(snapshot);
+    });
+    if (master) master.settings = materializeSettings(snapshot, master.width || snapshot.referenceWidth, master.height || snapshot.referenceHeight);
+    toast("Smart Apply hoàn tất", `${items.length} ảnh đã được đồng bộ theo tỷ lệ riêng của từng khung ngang/dọc. X/Y theo chiều ảnh, lề theo cạnh ngắn.`, "success", 5600);
     label?.();
   }
 
@@ -718,7 +822,10 @@
       }
       const logo = await ensureLogoBitmap();
       if (!logo) throw new Error("Chưa chọn logo.");
-      const settings = item.settings ? cloneSettings(item.settings) : cloneSettings();
+      item.width = bitmap.width;
+      item.height = bitmap.height;
+      const settings = materializeSettings(item.settings ? cloneSettings(item.settings) : cloneSettings(), bitmap.width, bitmap.height);
+      item.settings = cloneSettings(settings);
       surface = createSurface(bitmap.width, bitmap.height);
       const ctx = surface.getContext("2d", { alpha: true, desynchronized: true });
       ctx.imageSmoothingEnabled = true;
