@@ -836,6 +836,7 @@
     showHud("Đang mở Lưu/Chia sẻ vào Ảnh…");
     await shareFilesNative(files, `NTS Logo Studio · ${done} ảnh`);
     toast("Đã mở bảng Chia sẻ", "Trên iPhone chọn “Lưu hình ảnh/Save Images”; trên Android chọn Photos/Gallery nếu thiết bị hiển thị tùy chọn đó.", "success", 8500);
+    return done;
   }
 
   async function exportBatch(items, label = "đã chọn") {
@@ -849,11 +850,29 @@
       return;
     }
 
+    let quotaReservation = null;
+    let quotaFinished = false;
+    let delivered = 0;
+    try {
+      if (window.NTS?.membership?.beginExport) {
+        quotaReservation = await window.NTS.membership.beginExport(items.length);
+      }
+    } catch (error) {
+      toast("Không thể bắt đầu xuất", error?.message || String(error), "warning", 8000);
+      return;
+    }
+
     state.cancelExport = false;
+
+    // Mobile: native Share Sheet. Quota chỉ ghi nhận sau khi bảng Share hoàn tất.
     if (IS_MOBILE && navigator.share && navigator.canShare) {
       try {
         setExportUi(true);
-        await exportMobileShareBatch(items, label);
+        delivered = await exportMobileShareBatch(items, label) || 0;
+        if (quotaReservation && window.NTS?.membership?.finishExport) {
+          await window.NTS.membership.finishExport(quotaReservation, delivered);
+          quotaFinished = true;
+        }
       } catch (error) {
         if (error?.name !== "AbortError") {
           console.error(error);
@@ -861,17 +880,17 @@
           setBatchProgress(0, items.length, error?.message || "Batch mobile bị lỗi.");
         }
       } finally {
-        hideHud();
-        setExportUi(false);
-        state.cancelExport = false;
+        if (quotaReservation && !quotaFinished && window.NTS?.membership?.cancelExport) {
+          await window.NTS.membership.cancelExport(quotaReservation).catch(()=>{});
+        }
+        hideHud(); setExportUi(false); state.cancelExport = false;
       }
       return;
     }
+
     const usedNames = new Set();
     let done = 0, failed = 0, cancelled = 0;
-    let dirHandle = null;
-    let zip = null;
-    let zipMode = false;
+    let dirHandle = null, zip = null, zipMode = false;
 
     try {
       if (typeof window.showDirectoryPicker === "function") {
@@ -888,8 +907,7 @@
           throw new Error(IS_MOBILE ? "Lô ảnh quá lớn để đóng ZIP an toàn trên điện thoại. Hãy chọn ít ảnh hơn hoặc dùng máy tính." : "Lô ảnh quá lớn để đóng ZIP an toàn trong trình duyệt này. Hãy mở web bằng Chrome/Edge trên máy tính để xuất trực tiếp vào thư mục.");
         }
         if (!window.JSZip) throw new Error("Không tải được mô-đun ZIP. Kiểm tra kết nối Internet rồi thử lại.");
-        zip = new window.JSZip();
-        zipMode = true;
+        zip = new window.JSZip(); zipMode = true;
       }
 
       setExportUi(true);
@@ -899,97 +917,67 @@
       for (let index = 0; index < items.length; index += 1) {
         const item = items[index];
         if (state.cancelExport) {
-          for (let j = index; j < items.length; j += 1) {
-            if (items[j].status !== "done" && items[j].status !== "error") items[j].status = "cancelled";
-          }
-          cancelled = items.length - index;
-          break;
+          for (let j = index; j < items.length; j += 1) if (items[j].status !== "done" && items[j].status !== "error") items[j].status = "cancelled";
+          cancelled = items.length - index; break;
         }
-        item.status = "processing";
-        item.error = "";
-        renderImageList();
+        item.status = "processing"; item.error = ""; renderImageList();
         const progressText = `${index + 1}/${items.length} · ${item.file.name}`;
-        setBatchProgress(index, items.length, `Đang xử lý ${progressText}`);
-        showHud(`Batch ${progressText}`);
-        await yieldToUi();
-
+        setBatchProgress(index, items.length, `Đang xử lý ${progressText}`); showHud(`Batch ${progressText}`); await yieldToUi();
         try {
           const { blob, fileName } = await renderExportBlob(item);
           const safeName = uniqueOutputName(fileName, usedNames);
-          if (dirHandle) await saveBlobToDirectory(dirHandle, safeName, blob);
+          if (dirHandle) { await saveBlobToDirectory(dirHandle, safeName, blob); delivered += 1; }
           else zip.file(safeName, blob);
-          item.status = "done";
-          done += 1;
+          item.status = "done"; done += 1;
         } catch (error) {
-          console.error(error);
-          item.status = "error";
-          item.error = error?.message || String(error);
-          failed += 1;
+          console.error(error); item.status = "error"; item.error = error?.message || String(error); failed += 1;
         }
-        renderImageList();
-        setBatchProgress(index + 1, items.length, `Đã xử lý ${index + 1}/${items.length} ảnh`);
-        await yieldToUi();
+        renderImageList(); setBatchProgress(index + 1, items.length, `Đã xử lý ${index + 1}/${items.length} ảnh`); await yieldToUi();
       }
 
       if (zipMode && done > 0 && !state.cancelExport) {
-        showHud("Đang đóng gói ZIP...");
-        setBatchProgress(items.length, items.length, "Đang đóng gói ZIP — giữ nguyên chất lượng ảnh...");
-        const zipBlob = await zip.generateAsync(
-          { type: "blob", compression: "STORE", streamFiles: true },
-          (meta) => { els.batchProgressText.textContent = `Đóng ZIP ${Math.round(meta.percent)}%`; }
-        );
+        showHud("Đang đóng gói ZIP..."); setBatchProgress(items.length, items.length, "Đang đóng gói ZIP — giữ nguyên chất lượng ảnh...");
+        const zipBlob = await zip.generateAsync({ type: "blob", compression: "STORE", streamFiles: true }, meta => { els.batchProgressText.textContent = `Đóng ZIP ${Math.round(meta.percent)}%`; });
         downloadBlob(zipBlob, `NTS_Logo_Studio_${Date.now()}.zip`);
+        delivered = done;
       }
 
-      const summary = state.cancelExport
-        ? `Đã dừng. Thành công ${done}, lỗi ${failed}, chưa xử lý ${cancelled}.`
-        : `Hoàn tất ${done}/${items.length} ảnh${failed ? `, lỗi ${failed}` : ""}.`;
+      if (quotaReservation && window.NTS?.membership?.finishExport) {
+        await window.NTS.membership.finishExport(quotaReservation, delivered);
+        quotaFinished = true;
+      }
+      const summary = state.cancelExport ? `Đã dừng. Thành công ${done}, lỗi ${failed}, chưa xử lý ${cancelled}.` : `Hoàn tất ${done}/${items.length} ảnh${failed ? `, lỗi ${failed}` : ""}.`;
       setBatchProgress(done + failed, items.length, summary);
       toast(state.cancelExport ? "Đã dừng batch" : "Xuất hàng loạt hoàn tất", summary, failed ? "warning" : "success", 7000);
     } catch (error) {
-      console.error(error);
-      toast("Không thể xuất hàng loạt", error?.message || "Đã xảy ra lỗi khi chuẩn bị batch.", "error", 8000);
-      setBatchProgress(0, items.length, error?.message || "Batch bị lỗi.");
+      console.error(error); toast("Không thể xuất hàng loạt", error?.message || "Đã xảy ra lỗi khi chuẩn bị batch.", "error", 8000); setBatchProgress(0, items.length, error?.message || "Batch bị lỗi.");
     } finally {
-      hideHud();
-      setExportUi(false);
-      state.cancelExport = false;
+      if (quotaReservation && !quotaFinished && window.NTS?.membership?.cancelExport) await window.NTS.membership.cancelExport(quotaReservation).catch(()=>{});
+      hideHud(); setExportUi(false); state.cancelExport = false;
     }
   }
 
   async function exportCurrent() {
     const item = currentItem();
-    if (!item) {
-      toast("Chưa có ảnh", "Chọn một ảnh để xuất.", "warning");
-      return;
-    }
+    if (!item) return toast("Chưa có ảnh", "Chọn một ảnh để xuất.", "warning");
     if (state.exporting) return;
-    if (!state.logoFile) {
-      toast("Chưa có logo", "Hãy chọn logo trước khi xuất.", "warning");
-      return;
-    }
-    setExportUi(true);
-    showHud("Đang dựng ảnh full resolution...");
+    if (!state.logoFile) return toast("Chưa có logo", "Hãy chọn logo trước khi xuất.", "warning");
+    let reservation=null, finished=false;
     try {
-      const { blob, fileName } = await renderExportBlob(item);
-      const file = blobAsFile(blob, fileName);
-      if (IS_MOBILE && canNativeShareFiles([file])) {
-        await shareFilesNative([file], "NTS Logo Studio");
-        toast("Đã mở bảng Chia sẻ", "Chọn “Lưu hình ảnh/Save Image” hoặc Photos/Gallery để đưa ảnh vào thư viện ảnh của điện thoại.", "success", 8000);
-      } else {
-        downloadBlob(blob, fileName);
-        toast("Xuất ảnh thành công", IS_MOBILE ? `${fileName} đã được tải xuống. Nếu không thấy trong Photos, hãy kiểm tra Downloads/Files.` : fileName, "success", 7000);
-      }
-      item.status = "done";
-      renderImageList();
+      if (window.NTS?.membership?.beginExport) reservation=await window.NTS.membership.beginExport(1);
+    } catch (error) { toast("Không thể xuất ảnh", error?.message||String(error), "warning", 8000); return; }
+    setExportUi(true); showHud("Đang dựng ảnh full resolution...");
+    try {
+      const { blob, fileName } = await renderExportBlob(item); const file = blobAsFile(blob, fileName);
+      if (IS_MOBILE && canNativeShareFiles([file])) { await shareFilesNative([file], "NTS Logo Studio"); toast("Đã mở bảng Chia sẻ", "Chọn “Lưu hình ảnh/Save Image” hoặc Photos/Gallery để đưa ảnh vào thư viện ảnh.", "success", 8000); }
+      else { downloadBlob(blob, fileName); toast("Xuất ảnh thành công", IS_MOBILE ? `${fileName} đã được tải xuống. Nếu không thấy trong Photos, hãy kiểm tra Downloads/Files.` : fileName, "success", 7000); }
+      if (reservation && window.NTS?.membership?.finishExport) { await window.NTS.membership.finishExport(reservation,1); finished=true; }
+      item.status="done"; renderImageList();
     } catch (error) {
-      item.status = "error";
-      item.error = error?.message || String(error);
-      renderImageList();
-      toast("Không thể xuất ảnh", item.error, "error", 7000);
+      item.status="error"; item.error=error?.message||String(error); renderImageList(); toast("Không thể xuất ảnh",item.error,"error",7000);
     } finally {
-      hideHud();
-      setExportUi(false);
+      if (reservation && !finished && window.NTS?.membership?.cancelExport) await window.NTS.membership.cancelExport(reservation).catch(()=>{});
+      hideHud(); setExportUi(false);
     }
   }
 

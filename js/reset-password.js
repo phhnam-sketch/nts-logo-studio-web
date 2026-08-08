@@ -1,56 +1,12 @@
 (() => {
   "use strict";
-  const $ = (id) => document.getElementById(id);
-  const cfg = window.APP_CONFIG || {};
-  let timer = 0;
-
-  function showToast(title, message, kind = "info", duration = 4800) {
-    const el = $("globalToast");
-    $("toastTitle").textContent = title;
-    $("toastMessage").textContent = message;
-    $("toastIcon").textContent = kind === "success" ? "✓" : kind === "error" ? "!" : "i";
-    el.className = `toast ${kind} show`;
-    clearTimeout(timer);
-    timer = setTimeout(() => el.classList.remove("show"), duration);
-  }
-  $("toastClose").addEventListener("click", () => $("globalToast").classList.remove("show"));
-
-  const configured = cfg.SUPABASE_URL && cfg.SUPABASE_PUBLISHABLE_KEY && !cfg.SUPABASE_URL.includes("YOUR_PROJECT_ID");
-  if (!configured) {
-    showToast("Chưa cấu hình Supabase", "Điền Project URL và Publishable Key trong js/config.js.", "error", 8000);
-    $("resetSubmit").disabled = true;
-    return;
-  }
-
-  const client = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_PUBLISHABLE_KEY, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
-  });
-
-  $("resetForm").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const p1 = $("newPassword").value;
-    const p2 = $("confirmPassword").value;
-    if (p1.length < 8) {
-      showToast("Mật khẩu quá ngắn", "Hãy dùng ít nhất 8 ký tự.", "error");
-      return;
-    }
-    if (p1 !== p2) {
-      showToast("Mật khẩu không khớp", "Hai lần nhập mật khẩu phải giống nhau.", "error");
-      return;
-    }
-
-    const button = $("resetSubmit");
-    button.disabled = true;
-    button.textContent = "Đang cập nhật...";
-    try {
-      const { error } = await client.auth.updateUser({ password: p1 });
-      if (error) throw error;
-      showToast("Đổi mật khẩu thành công", "Bạn có thể quay lại và đăng nhập bằng mật khẩu mới.", "success", 6500);
-      setTimeout(() => { window.location.href = "./"; }, 1800);
-    } catch (error) {
-      showToast("Không thể đổi mật khẩu", error?.message || "Đường dẫn có thể đã hết hạn. Hãy yêu cầu email mới.", "error", 7000);
-      button.disabled = false;
-      button.textContent = "Cập nhật mật khẩu";
-    }
-  });
+  const cfg=window.APP_CONFIG||{};
+  const $=id=>document.getElementById(id);
+  let timer=0;
+  function toast(t,m,k="info",d=5000){$("toastTitle").textContent=t;$("toastMessage").textContent=m||"";$("toastIcon").textContent=k==="success"?"✓":"!";$("globalToast").className=`toast ${k} show`;clearTimeout(timer);timer=setTimeout(()=>$("globalToast").classList.remove("show"),d);}
+  $("toastClose")?.addEventListener("click",()=>$("globalToast").classList.remove("show"));
+  const configured=cfg.SUPABASE_URL&&cfg.SUPABASE_PUBLISHABLE_KEY&&!cfg.SUPABASE_URL.includes("YOUR_PROJECT_ID");
+  if(!configured){toast("Chưa cấu hình Supabase","Điền js/config.js trước.","error",8000);return;}
+  const client=window.supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_PUBLISHABLE_KEY,{auth:{detectSessionInUrl:true,persistSession:true}});
+  $("resetForm")?.addEventListener("submit",async e=>{e.preventDefault();const a=$("newPassword").value,b=$("confirmPassword").value;if(a.length<8)return toast("Mật khẩu quá ngắn","Tối thiểu 8 ký tự.","error");if(a!==b)return toast("Không khớp","Hai mật khẩu không giống nhau.","error");const btn=$("resetSubmit");btn.disabled=true;try{const {error}=await client.auth.updateUser({password:a});if(error)throw error;toast("Đã đổi mật khẩu","Bạn có thể quay lại đăng nhập.","success",7000);setTimeout(()=>location.href="./",1400);}catch(error){toast("Không đổi được mật khẩu",error.message||String(error),"error",7000);}finally{btn.disabled=false;}});
 })();
