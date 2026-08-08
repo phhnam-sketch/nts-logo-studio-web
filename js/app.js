@@ -4,6 +4,29 @@
   const $ = (id) => document.getElementById(id);
   const toast = (title, message, kind = "info", duration) => window.NTS?.showToast?.(title, message, kind, duration);
 
+  const MOBILE_UA = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
+  const COARSE_POINTER = window.matchMedia?.("(pointer: coarse)")?.matches ?? false;
+  const IS_MOBILE = MOBILE_UA || (COARSE_POINTER && Math.min(window.innerWidth, window.innerHeight) < 1100);
+  const MOBILE_MAX_PIXELS = 16_000_000;
+  const MOBILE_SHARE_MAX_FILES = 8;
+  const MOBILE_ZIP_MAX_INPUT = 40 * 1024 ** 2;
+  const DESKTOP_ZIP_MAX_INPUT = 280 * 1024 ** 2;
+
+  function withTimeout(promise, ms, message) {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = window.setTimeout(() => reject(new Error(message || "Tác vụ mất quá nhiều thời gian.")), ms);
+    });
+    return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timer));
+  }
+
+  function cleanupSurface(surface) {
+    try {
+      if (surface && "width" in surface) surface.width = 1;
+      if (surface && "height" in surface) surface.height = 1;
+    } catch (_) {}
+  }
+
   const state = {
     images: [],
     selectedId: null,
@@ -80,6 +103,7 @@
     exportSelectionBadge: $("exportSelectionBadge"),
     batchProgressBar: $("batchProgressBar"),
     batchProgressText: $("batchProgressText"),
+    mobileExportHint: $("mobileExportHint"),
     libraryPanel: $("libraryPanel"),
     settingsPanel: $("settingsPanel"),
     mobileLibraryToggle: $("mobileLibraryToggle"),
@@ -659,8 +683,10 @@
   });
 
   async function canvasToBlob(surface, mime, quality) {
-    if (surface.convertToBlob) return surface.convertToBlob({ type: mime, quality });
-    return new Promise((resolve, reject) => surface.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Không tạo được file ảnh.")), mime, quality));
+    const work = surface.convertToBlob
+      ? surface.convertToBlob({ type: mime, quality })
+      : new Promise((resolve, reject) => surface.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Không tạo được file ảnh.")), mime, quality));
+    return withTimeout(work, IS_MOBILE ? 30000 : 60000, "Điện thoại mất quá lâu khi mã hóa ảnh. Hãy thử ít ảnh hơn hoặc ảnh có độ phân giải thấp hơn.");
   }
 
   function outputSpec(item) {
@@ -673,30 +699,42 @@
 
   async function renderExportBlob(item) {
     let bitmap = null;
+    let surface = null;
+    let rotated = null;
     try {
-      bitmap = await createImageBitmap(item.file, { imageOrientation: "from-image" }).catch(() => createImageBitmap(item.file));
+      bitmap = await withTimeout(
+        createImageBitmap(item.file, { imageOrientation: "from-image" }).catch(() => createImageBitmap(item.file)),
+        IS_MOBILE ? 20000 : 45000,
+        `Không thể giải mã ${item.file.name} đủ nhanh trên thiết bị này.`
+      );
       const pixels = bitmap.width * bitmap.height;
-      const ramGb = Number(navigator.deviceMemory || 8);
-      const maxPixels = ramGb <= 4 ? 45_000_000 : 90_000_000;
+      const rawRam = Number(navigator.deviceMemory);
+      const ramGb = Number.isFinite(rawRam) && rawRam > 0 ? rawRam : (IS_MOBILE ? 3 : 8);
+      const maxPixels = IS_MOBILE ? MOBILE_MAX_PIXELS : (ramGb <= 4 ? 45_000_000 : 90_000_000);
       if (pixels > maxPixels) {
-        throw new Error(`Ảnh ${item.file.name} quá lớn (${Math.round(pixels / 1e6)} MP) so với giới hạn an toàn của trình duyệt này.`);
+        const mp = Math.round(pixels / 1e6);
+        const limitMp = Math.round(maxPixels / 1e6);
+        throw new Error(`Ảnh ${item.file.name} là ${mp} MP. Mobile Safe hiện giới hạn khoảng ${limitMp} MP để tránh treo trình duyệt. Hãy giảm độ phân giải ảnh hoặc xuất trên máy tính.`);
       }
       const logo = await ensureLogoBitmap();
       if (!logo) throw new Error("Chưa chọn logo.");
       const settings = item.settings ? cloneSettings(item.settings) : cloneSettings();
-      const surface = createSurface(bitmap.width, bitmap.height);
-      const ctx = surface.getContext("2d", { alpha: true });
+      surface = createSurface(bitmap.width, bitmap.height);
+      const ctx = surface.getContext("2d", { alpha: true, desynchronized: true });
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = "high";
       ctx.drawImage(bitmap, 0, 0);
-      const rotated = rotatedLogoSurface(logo, Math.min(bitmap.width, bitmap.height), settings.rotation, settings);
+      rotated = rotatedLogoSurface(logo, Math.min(bitmap.width, bitmap.height), settings.rotation, settings);
       const pos = watermarkPosition(0, 0, bitmap.width, bitmap.height, rotated.width, rotated.height, 1, settings);
       ctx.drawImage(rotated, pos.x, pos.y);
       const spec = outputSpec(item);
       const blob = await canvasToBlob(surface, spec.mime, spec.quality);
+      if (!blob || blob.size === 0) throw new Error("Trình duyệt tạo ra file ảnh rỗng.");
       return { blob, fileName: spec.name };
     } finally {
       bitmap?.close?.();
+      cleanupSurface(rotated);
+      cleanupSurface(surface);
     }
   }
 
@@ -730,6 +768,24 @@
     window.setTimeout(() => URL.revokeObjectURL(url), 5000);
   }
 
+  function blobAsFile(blob, fileName) {
+    return new File([blob], fileName, { type: blob.type || "image/jpeg", lastModified: Date.now() });
+  }
+
+  function canNativeShareFiles(files) {
+    try {
+      return Boolean(navigator.share && navigator.canShare && files?.length && navigator.canShare({ files }));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  async function shareFilesNative(files, title = "NTS Logo Studio") {
+    if (!canNativeShareFiles(files)) return false;
+    await navigator.share({ files, title });
+    return true;
+  }
+
   function setExportUi(running) {
     state.exporting = running;
     els.cancelExportButton.classList.toggle("hidden", !running);
@@ -739,6 +795,47 @@
     els.selectAllImages.disabled = running;
     els.clearSelection.disabled = running;
     renderImageList();
+  }
+
+  async function exportMobileShareBatch(items, label) {
+    if (items.length > MOBILE_SHARE_MAX_FILES) {
+      throw new Error(`Trên điện thoại, hãy chọn tối đa ${MOBILE_SHARE_MAX_FILES} ảnh mỗi lần để lưu vào Photos/Gallery ổn định. Với lô lớn hơn, hãy chia thành nhiều lượt hoặc dùng máy tính.`);
+    }
+    const files = [];
+    const usedNames = new Set();
+    let done = 0;
+    for (let index = 0; index < items.length; index += 1) {
+      if (state.cancelExport) break;
+      const item = items[index];
+      item.status = "processing";
+      item.error = "";
+      renderImageList();
+      setBatchProgress(index, items.length, `Mobile Safe ${index + 1}/${items.length} · ${item.file.name}`);
+      showHud(`Mobile ${index + 1}/${items.length} · ${item.file.name}`);
+      await yieldToUi();
+      try {
+        const { blob, fileName } = await renderExportBlob(item);
+        const safeName = uniqueOutputName(fileName, usedNames);
+        files.push(blobAsFile(blob, safeName));
+        item.status = "done";
+        done += 1;
+      } catch (error) {
+        item.status = "error";
+        item.error = error?.message || String(error);
+        throw error;
+      } finally {
+        renderImageList();
+        await yieldToUi();
+      }
+    }
+    if (!files.length) return;
+    if (!canNativeShareFiles(files)) {
+      throw new Error("Trình duyệt này không hỗ trợ chia sẻ nhiều file ảnh. Hãy dùng Safari/Chrome mới hơn, chọn ít ảnh hơn, hoặc xuất ZIP.");
+    }
+    setBatchProgress(done, items.length, `Đã dựng ${done} ảnh. Đang mở bảng Chia sẻ…`);
+    showHud("Đang mở Lưu/Chia sẻ vào Ảnh…");
+    await shareFilesNative(files, `NTS Logo Studio · ${done} ảnh`);
+    toast("Đã mở bảng Chia sẻ", "Trên iPhone chọn “Lưu hình ảnh/Save Images”; trên Android chọn Photos/Gallery nếu thiết bị hiển thị tùy chọn đó.", "success", 8500);
   }
 
   async function exportBatch(items, label = "đã chọn") {
@@ -753,6 +850,23 @@
     }
 
     state.cancelExport = false;
+    if (IS_MOBILE && navigator.share && navigator.canShare) {
+      try {
+        setExportUi(true);
+        await exportMobileShareBatch(items, label);
+      } catch (error) {
+        if (error?.name !== "AbortError") {
+          console.error(error);
+          toast("Không thể lưu/chia sẻ batch", error?.message || "Thiết bị không xử lý được lô ảnh này.", "error", 9000);
+          setBatchProgress(0, items.length, error?.message || "Batch mobile bị lỗi.");
+        }
+      } finally {
+        hideHud();
+        setExportUi(false);
+        state.cancelExport = false;
+      }
+      return;
+    }
     const usedNames = new Set();
     let done = 0, failed = 0, cancelled = 0;
     let dirHandle = null;
@@ -769,9 +883,9 @@
         }
       } else {
         const totalInput = items.reduce((sum, item) => sum + (item.file.size || 0), 0);
-        const safeZipLimit = /Mobi|Android/i.test(navigator.userAgent) ? 120 * 1024 ** 2 : 280 * 1024 ** 2;
+        const safeZipLimit = IS_MOBILE ? MOBILE_ZIP_MAX_INPUT : DESKTOP_ZIP_MAX_INPUT;
         if (totalInput > safeZipLimit) {
-          throw new Error("Lô ảnh quá lớn để đóng ZIP an toàn trong trình duyệt này. Hãy mở web bằng Chrome/Edge trên máy tính để xuất trực tiếp vào thư mục.");
+          throw new Error(IS_MOBILE ? "Lô ảnh quá lớn để đóng ZIP an toàn trên điện thoại. Hãy chọn ít ảnh hơn hoặc dùng máy tính." : "Lô ảnh quá lớn để đóng ZIP an toàn trong trình duyệt này. Hãy mở web bằng Chrome/Edge trên máy tính để xuất trực tiếp vào thư mục.");
         }
         if (!window.JSZip) throw new Error("Không tải được mô-đun ZIP. Kiểm tra kết nối Internet rồi thử lại.");
         zip = new window.JSZip();
@@ -858,10 +972,16 @@
     showHud("Đang dựng ảnh full resolution...");
     try {
       const { blob, fileName } = await renderExportBlob(item);
-      downloadBlob(blob, fileName);
+      const file = blobAsFile(blob, fileName);
+      if (IS_MOBILE && canNativeShareFiles([file])) {
+        await shareFilesNative([file], "NTS Logo Studio");
+        toast("Đã mở bảng Chia sẻ", "Chọn “Lưu hình ảnh/Save Image” hoặc Photos/Gallery để đưa ảnh vào thư viện ảnh của điện thoại.", "success", 8000);
+      } else {
+        downloadBlob(blob, fileName);
+        toast("Xuất ảnh thành công", IS_MOBILE ? `${fileName} đã được tải xuống. Nếu không thấy trong Photos, hãy kiểm tra Downloads/Files.` : fileName, "success", 7000);
+      }
       item.status = "done";
       renderImageList();
-      toast("Xuất ảnh thành công", fileName, "success");
     } catch (error) {
       item.status = "error";
       item.error = error?.message || String(error);
@@ -887,6 +1007,11 @@
       els.cancelExportButton.textContent = "Dừng sau ảnh đang xử lý";
     }, 1200);
   });
+
+  if (els.mobileExportHint && IS_MOBILE) {
+    els.mobileExportHint.classList.remove("hidden");
+    els.mobileExportHint.textContent = `Mobile Safe: tối đa ~${Math.round(MOBILE_MAX_PIXELS / 1e6)} MP/ảnh, tối đa ${MOBILE_SHARE_MAX_FILES} ảnh/lượt khi lưu vào Photos/Gallery.`;
+  }
 
   function closeMobileDrawers() {
     els.libraryPanel.classList.remove("mobile-open");
