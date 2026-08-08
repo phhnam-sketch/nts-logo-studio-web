@@ -1,0 +1,7 @@
+.reset-shell { min-height: 100vh; display: grid; place-items: center; padding: 22px; background: radial-gradient(circle at 75% 15%, rgba(215,168,75,.14), transparent 24%), linear-gradient(135deg,#3f0a1b,#711a37 60%,#9a2b50); }
+.reset-card { width: min(460px,100%); padding: 30px; border-radius: 24px; background: rgba(255,255,255,.97); box-shadow: 0 28px 80px rgba(30,0,12,.32); }
+.reset-brand { color: var(--text); margin-bottom: 30px; }
+.reset-brand .brand-version { color: var(--muted); }
+.reset-card h1 { margin: 12px 0 7px; font-size: 30px; letter-spacing: -.04em; }
+.reset-card > p { margin: 0 0 24px; color: var(--muted); }
+.reset-back { display: block; margin-top: 19px; text-align: center; color: var(--accent-2); font-size: 12px; font-weight: 750; text-decoration: none; }

@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#711A37" />
+  <meta name="description" content="NTS Logo Studio Pro Web - công cụ đóng dấu ảnh trực quan với tài khoản người dùng." />
+  <title>NTS Logo Studio Pro Web</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <div id="globalToast" class="toast" role="status" aria-live="polite" aria-atomic="true">
+    <div class="toast-icon" id="toastIcon">i</div>
+    <div class="toast-copy">
+      <strong id="toastTitle">Thông báo</strong>
+      <span id="toastMessage"></span>
+    </div>
+    <button id="toastClose" class="icon-button" type="button" aria-label="Đóng thông báo">×</button>
+  </div>
+
+  <main id="authView" class="auth-shell">
+    <section class="auth-brand-panel" aria-label="Giới thiệu NTS Logo Studio">
+      <div class="brand-lockup">
+        <div class="brand-mark">NTS</div>
+        <div>
+          <div class="brand-name">LOGO STUDIO PRO</div>
+          <div class="brand-version">WEB EDITION</div>
+        </div>
+      </div>
+
+      <div class="brand-hero">
+        <span class="eyebrow">Bordeaux Precision UI</span>
+        <h1>Đóng dấu ảnh chuyên nghiệp ngay trên web.</h1>
+        <p>Đăng nhập để quản lý phiên làm việc, sử dụng giao diện tối ưu cho desktop, tablet và mobile.</p>
+      </div>
+
+      <div class="feature-grid">
+        <article class="feature-card">
+          <span class="feature-icon">◫</span>
+          <div>
+            <strong>Preview trực quan</strong>
+            <p>Before/After dạng thanh kéo, zoom và căn vị trí logo trực tiếp.</p>
+          </div>
+        </article>
+        <article class="feature-card">
+          <span class="feature-icon">⚡</span>
+          <div>
+            <strong>Nhẹ và riêng tư</strong>
+            <p>Preview xử lý tại trình duyệt; ảnh không tự động tải lên server.</p>
+          </div>
+        </article>
+        <article class="feature-card">
+          <span class="feature-icon">✓</span>
+          <div>
+            <strong>Tài khoản thật</strong>
+            <p>Đăng ký, đăng nhập, giữ phiên, quên mật khẩu và Google OAuth.</p>
+          </div>
+        </article>
+      </div>
+
+      <div class="brand-footer">NAM TIÊN SINH STUDIO · 2026</div>
+    </section>
+
+    <section class="auth-form-panel">
+      <div class="auth-card">
+        <div class="auth-heading">
+          <span class="auth-badge">NTS CLOUD</span>
+          <h2 id="authTitle">Chào mừng trở lại</h2>
+          <p id="authSubtitle">Đăng nhập để tiếp tục vào Logo Studio.</p>
+        </div>
+
+        <div class="auth-tabs" role="tablist" aria-label="Đăng nhập hoặc đăng ký">
+          <button id="loginTab" class="auth-tab active" type="button" role="tab" aria-selected="true">Đăng nhập</button>
+          <button id="registerTab" class="auth-tab" type="button" role="tab" aria-selected="false">Tạo tài khoản</button>
+        </div>
+
+        <form id="authForm" class="auth-form" novalidate>
+          <div id="nameField" class="field hidden">
+            <label for="displayName">Tên hiển thị</label>
+            <div class="input-shell">
+              <span class="input-icon">A</span>
+              <input id="displayName" name="displayName" type="text" autocomplete="name" maxlength="60" placeholder="Ví dụ: Nam Tiên Sinh" />
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="email">Email</label>
+            <div class="input-shell">
+              <span class="input-icon">@</span>
+              <input id="email" name="email" type="email" autocomplete="email" inputmode="email" required placeholder="ban@example.com" />
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field-label-row">
+              <label for="password">Mật khẩu</label>
+              <button id="forgotPassword" class="text-button" type="button">Quên mật khẩu?</button>
+            </div>
+            <div class="input-shell">
+              <span class="input-icon">•</span>
+              <input id="password" name="password" type="password" autocomplete="current-password" minlength="8" required placeholder="Tối thiểu 8 ký tự" />
+              <button id="togglePassword" class="password-toggle" type="button" aria-label="Hiện mật khẩu">Hiện</button>
+            </div>
+            <div id="passwordStrength" class="password-strength hidden" aria-hidden="true">
+              <span></span><span></span><span></span><span></span>
+            </div>
+          </div>
+
+          <label id="termsRow" class="check-row hidden">
+            <input id="terms" type="checkbox" />
+            <span>Tôi đồng ý với điều khoản sử dụng và chính sách bảo mật.</span>
+          </label>
+
+          <button id="authSubmit" class="primary-button" type="submit">
+            <span id="authSubmitText">Đăng nhập</span>
+            <span id="authSpinner" class="spinner hidden" aria-hidden="true"></span>
+          </button>
+        </form>
+
+        <div class="divider"><span>hoặc</span></div>
+
+        <button id="googleLogin" class="oauth-button" type="button">
+          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="#4285F4" d="M21.6 12.23c0-.71-.06-1.4-.18-2.06H12v3.9h5.38a4.6 4.6 0 0 1-1.99 3.02v2.52h3.22c1.89-1.74 2.99-4.3 2.99-7.38Z"/>
+            <path fill="#34A853" d="M12 22c2.7 0 4.97-.9 6.62-2.39l-3.22-2.52c-.9.6-2.04.96-3.4.96-2.61 0-4.82-1.76-5.61-4.13H3.06v2.6A10 10 0 0 0 12 22Z"/>
+            <path fill="#FBBC05" d="M6.39 13.92A6 6 0 0 1 6.07 12c0-.67.11-1.32.32-1.92v-2.6H3.06A10 10 0 0 0 2 12c0 1.62.39 3.15 1.06 4.52l3.33-2.6Z"/>
+            <path fill="#EA4335" d="M12 5.95c1.47 0 2.79.5 3.83 1.5l2.87-2.88A9.63 9.63 0 0 0 12 2a10 10 0 0 0-8.94 5.48l3.33 2.6C7.18 7.71 9.39 5.95 12 5.95Z"/>
+          </svg>
+          Tiếp tục với Google
+        </button>
+
+        <p id="authFootnote" class="auth-footnote">Phiên đăng nhập được lưu an toàn bằng Supabase Auth.</p>
+      </div>
+    </section>
+  </main>
+
+  <main id="appView" class="app-shell hidden">
+    <header class="app-topbar">
+      <div class="app-brand">
+        <button id="mobileLibraryToggle" class="icon-button mobile-only" type="button" aria-label="Mở thư viện">☰</button>
+        <div class="brand-mark small">NTS</div>
+        <div class="app-brand-text">
+          <strong>LOGO STUDIO PRO</strong>
+          <span>WEB BETA</span>
+        </div>
+      </div>
+
+      <div class="topbar-center">
+        <span class="status-pill success"><span class="status-dot"></span> Online</span>
+        <span id="autosaveText" class="topbar-note">Phiên đã được bảo vệ</span>
+      </div>
+
+      <div class="user-menu-wrap">
+        <button id="userMenuButton" class="user-chip" type="button" aria-expanded="false">
+          <span id="userAvatar" class="user-avatar">N</span>
+          <span class="user-copy">
+            <strong id="userDisplayName">Người dùng</strong>
+            <small id="userEmail">email@example.com</small>
+          </span>
+          <span class="chevron">⌄</span>
+        </button>
+        <div id="userMenu" class="user-menu hidden">
+          <div class="user-menu-heading">
+            <strong id="menuDisplayName">Người dùng</strong>
+            <span id="menuEmail">email@example.com</span>
+          </div>
+          <button id="logoutButton" class="menu-danger" type="button">Đăng xuất</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <aside id="libraryPanel" class="side-panel library-panel">
+        <div class="panel-heading-row">
+          <div>
+            <span class="step-label">01</span>
+            <h2>Thư viện ảnh</h2>
+          </div>
+          <span id="imageCount" class="count-chip">0 ảnh</span>
+        </div>
+
+        <label class="drop-zone" id="dropZone" for="imageInput">
+          <input id="imageInput" type="file" accept="image/*" multiple hidden />
+          <div class="drop-icon">＋</div>
+          <strong>Thêm ảnh</strong>
+          <span>Kéo thả hoặc bấm để chọn</span>
+        </label>
+
+        <div class="search-shell">
+          <span>⌕</span>
+          <input id="imageSearch" type="search" placeholder="Tìm tên ảnh..." />
+        </div>
+
+        <div id="imageList" class="image-list">
+          <div class="empty-list-state">
+            <div class="empty-icon">▧</div>
+            <strong>Chưa có ảnh</strong>
+            <p>Thêm ảnh để bắt đầu preview.</p>
+          </div>
+        </div>
+
+        <div class="library-selection-bar">
+          <div class="selection-summary"><strong id="selectedCount">0</strong><span>đã chọn để xuất</span></div>
+          <div class="selection-actions">
+            <button id="selectAllImages" class="text-button" type="button">Chọn tất cả</button>
+            <button id="clearSelection" class="text-button" type="button">Bỏ chọn</button>
+          </div>
+        </div>
+
+        <div class="panel-footer-actions">
+          <button id="clearImages" class="secondary-button" type="button">Xóa danh sách</button>
+        </div>
+      </aside>
+
+      <section class="preview-panel">
+        <div class="preview-toolbar">
+          <div class="preview-title-wrap">
+            <span class="step-label">02</span>
+            <div>
+              <h2>Preview</h2>
+              <p id="previewMeta">Chưa có ảnh được chọn</p>
+            </div>
+          </div>
+
+          <div class="preview-actions">
+            <button id="compareToggle" class="tool-button active" type="button">◫ Before / After</button>
+            <button id="fitPreview" class="tool-button" type="button">Vừa khung</button>
+          </div>
+        </div>
+
+        <div id="previewStage" class="preview-stage">
+          <div id="previewEmpty" class="preview-empty">
+            <div class="preview-empty-mark">NTS</div>
+            <h3>Thêm ảnh và logo để bắt đầu</h3>
+            <p>Ảnh preview được xử lý cục bộ trên trình duyệt.</p>
+          </div>
+
+          <div id="compareFrame" class="compare-frame hidden">
+            <canvas id="afterCanvas" class="preview-canvas"></canvas>
+            <div id="beforeClip" class="before-clip">
+              <canvas id="beforeCanvas" class="preview-canvas"></canvas>
+            </div>
+            <div id="splitDivider" class="split-divider" role="slider" aria-label="So sánh Before After" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0">
+              <span class="split-handle">↔</span>
+            </div>
+            <span class="compare-badge before-badge">BEFORE</span>
+            <span class="compare-badge after-badge">AFTER</span>
+          </div>
+
+          <div id="previewHud" class="preview-hud hidden">
+            <span class="hud-spinner"></span>
+            <span id="previewHudText">Đang xử lý preview...</span>
+          </div>
+        </div>
+
+        <div class="preview-bottom-bar">
+          <div class="preview-hint">Kéo thanh giữa để so sánh ảnh gốc và ảnh đã gắn logo.</div>
+          <div id="selectedImageStatus" class="selected-chip">0 ảnh</div>
+        </div>
+      </section>
+
+      <aside id="settingsPanel" class="side-panel settings-panel">
+        <div class="panel-heading-row sticky-heading">
+          <div>
+            <span class="step-label">03</span>
+            <h2>Thiết lập logo</h2>
+          </div>
+          <button id="mobileSettingsClose" class="icon-button mobile-only" type="button" aria-label="Đóng thiết lập">×</button>
+        </div>
+
+        <div class="settings-scroll">
+          <section class="setting-section">
+            <div class="section-label">LOGO</div>
+            <label class="logo-picker" for="logoInput">
+              <input id="logoInput" type="file" accept="image/png,image/webp,image/jpeg" hidden />
+              <div id="logoPreviewBox" class="logo-preview-box">LOGO</div>
+              <div class="logo-picker-copy">
+                <strong id="logoFileName">Chọn file logo</strong>
+                <span>Khuyến nghị PNG nền trong suốt</span>
+              </div>
+              <span class="logo-change">Đổi</span>
+            </label>
+          </section>
+
+          <section class="setting-section">
+            <div class="section-label-row">
+              <div class="section-label">VỊ TRÍ</div>
+              <button id="resetTransform" class="text-button" type="button">Reset</button>
+            </div>
+            <div id="positionGrid" class="position-grid" aria-label="Chọn vị trí logo">
+              <button type="button" data-pos="NW">↖</button><button type="button" data-pos="N">↑</button><button type="button" data-pos="NE">↗</button>
+              <button type="button" data-pos="W">←</button><button type="button" data-pos="C">●</button><button type="button" data-pos="E">→</button>
+              <button type="button" data-pos="SW">↙</button><button type="button" data-pos="S">↓</button><button class="active" type="button" data-pos="SE">↘</button>
+            </div>
+          </section>
+
+          <section class="setting-section">
+            <div class="control-row">
+              <div class="control-copy"><label for="opacityRange">Độ mờ</label><span id="opacityValue">92%</span></div>
+              <input id="opacityRange" type="range" min="0" max="100" value="92" />
+            </div>
+            <div class="control-row">
+              <div class="control-copy"><label for="sizeRange">Kích thước</label><span id="sizeValue">18%</span></div>
+              <input id="sizeRange" type="range" min="2" max="80" value="18" />
+            </div>
+            <div class="control-row">
+              <div class="control-copy"><label for="paddingRange">Khoảng cách lề</label><span id="paddingValue">28 px</span></div>
+              <input id="paddingRange" type="range" min="0" max="300" value="28" />
+            </div>
+            <div class="control-row">
+              <div class="control-copy"><label for="offsetXRange">Ngang X</label><span id="offsetXValue">0 px</span></div>
+              <input id="offsetXRange" type="range" min="-500" max="500" value="0" />
+            </div>
+            <div class="control-row">
+              <div class="control-copy"><label for="offsetYRange">Dọc Y</label><span id="offsetYValue">0 px</span></div>
+              <input id="offsetYRange" type="range" min="-500" max="500" value="0" />
+            </div>
+            <div class="control-row">
+              <div class="control-copy"><label for="rotationRange">Xoay</label><span id="rotationValue">0°</span></div>
+              <input id="rotationRange" type="range" min="-180" max="180" value="0" />
+              <div class="quick-angle-row">
+                <button type="button" data-angle="-90">−90°</button>
+                <button type="button" data-angle="0">0°</button>
+                <button type="button" data-angle="90">+90°</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="setting-section compact-section">
+            <label class="toggle-row">
+              <span><strong>Giữ logo trong khung</strong><small>Tránh watermark đi ra ngoài ảnh</small></span>
+              <input id="keepInsideToggle" type="checkbox" checked />
+              <span class="toggle-ui"></span>
+            </label>
+          </section>
+
+          <section class="setting-section">
+            <div class="section-label">ĐỒNG BỘ CẤU HÌNH</div>
+            <div class="action-grid">
+              <button id="applySelectedButton" class="secondary-button" type="button">Áp dụng ảnh đã chọn</button>
+              <button id="applyAllButton" class="secondary-button" type="button">Áp dụng tất cả</button>
+            </div>
+            <p class="section-note">Mỗi ảnh có cấu hình riêng. Hai nút trên sẽ copy chính xác cấu hình đang preview sang nhóm tương ứng.</p>
+          </section>
+
+          <section class="setting-section export-section">
+            <div class="section-label-row">
+              <div class="section-label">XUẤT ẢNH</div>
+              <span id="exportSelectionBadge" class="export-badge">0 ảnh</span>
+            </div>
+            <button id="exportSelectedButton" class="primary-button full-width" type="button">⇩ XUẤT ẢNH ĐÃ CHỌN</button>
+            <div class="action-grid export-secondary-row">
+              <button id="exportAllButton" class="secondary-button" type="button">Xuất tất cả</button>
+              <button id="exportCurrentButton" class="secondary-button" type="button">Ảnh hiện tại</button>
+            </div>
+            <button id="cancelExportButton" class="danger-soft-button full-width hidden" type="button">Dừng sau ảnh đang xử lý</button>
+            <div class="batch-progress-shell">
+              <div class="batch-progress-track"><span id="batchProgressBar"></span></div>
+              <div id="batchProgressText" class="batch-progress-text">Sẵn sàng xuất.</div>
+            </div>
+            <p class="section-note">Chrome/Edge: chọn thư mục và app ghi từng ảnh trực tiếp để tiết kiệm RAM. Trình duyệt khác: tự đóng các ảnh thành ZIP (có giới hạn an toàn).</p>
+          </section>
+        </div>
+      </aside>
+    </div>
+
+    <button id="mobileSettingsToggle" class="mobile-fab mobile-only" type="button">⚙ Thiết lập</button>
+  </main>
+
+  <div id="forgotModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="forgotTitle">
+    <div class="modal-card">
+      <button id="forgotModalClose" class="modal-close" type="button" aria-label="Đóng">×</button>
+      <span class="auth-badge">RECOVERY</span>
+      <h2 id="forgotTitle">Khôi phục mật khẩu</h2>
+      <p>Nhập email đã đăng ký. Chúng tôi sẽ gửi đường dẫn đặt mật khẩu mới.</p>
+      <form id="forgotForm">
+        <div class="field">
+          <label for="forgotEmail">Email</label>
+          <div class="input-shell">
+            <span class="input-icon">@</span>
+            <input id="forgotEmail" type="email" required placeholder="ban@example.com" />
+          </div>
+        </div>
+        <button id="forgotSubmit" class="primary-button" type="submit">Gửi email khôi phục</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
