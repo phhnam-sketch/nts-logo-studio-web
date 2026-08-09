@@ -318,6 +318,11 @@
     const open = userMenu.classList.toggle("hidden") === false;
     userMenuButton.setAttribute("aria-expanded", String(open));
   });
+  userMenu?.addEventListener("click", (event) => {
+    if (!event.target.closest("[data-page], #logoutButton")) return;
+    userMenu.classList.add("hidden");
+    userMenuButton?.setAttribute("aria-expanded", "false");
+  });
   document.addEventListener("click", (event) => {
     if (!event.target.closest(".user-menu-wrap")) { userMenu?.classList.add("hidden"); userMenuButton?.setAttribute("aria-expanded", "false"); }
   });

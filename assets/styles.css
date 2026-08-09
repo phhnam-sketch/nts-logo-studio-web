@@ -2029,3 +2029,115 @@ body.profile-media-modal-open{overflow:hidden}
 .v311-media-save-row .primary-button,.v311-media-save-row .secondary-button{min-width:120px}
 .v37-member-avatar .v310-avatar-frame>img{display:block!important;opacity:1!important}
 @media(max-width:760px){.v311-media-save-row{position:sticky;bottom:-18px;padding:12px 0 2px;background:linear-gradient(180deg,rgba(255,246,249,0),rgba(255,246,249,.98) 28%)}}
+
+
+/* ========================================================================== */
+/* V3.11.2 PROFILE LAYOUT STABILITY HOTFIX                                    */
+/* Restores the profile hero's original absolute layer model.                 */
+/* ========================================================================== */
+.v311-profile-hero{
+  position:relative!important;
+  height:310px!important;
+  min-height:310px!important;
+  overflow:hidden!important;
+  isolation:isolate;
+  background:#4c0c22!important;
+}
+.v311-profile-hero .v311-cover-viewport{
+  position:absolute!important;
+  inset:0!important;
+  z-index:0!important;
+  width:100%!important;
+  height:100%!important;
+  overflow:hidden!important;
+  border-radius:inherit!important;
+}
+.v311-profile-hero .v311-cover-viewport>.profile-cover{
+  position:absolute!important;
+  inset:0!important;
+  width:100%!important;
+  height:100%!important;
+  max-width:none!important;
+  max-height:none!important;
+  object-fit:cover!important;
+  object-position:center!important;
+  transform:none!important;
+  border-radius:inherit!important;
+}
+.v311-profile-hero .profile-hero-overlay{
+  position:absolute!important;
+  inset:0!important;
+  z-index:1!important;
+  pointer-events:none!important;
+  background:linear-gradient(180deg,rgba(25,3,11,.03) 0%,rgba(25,3,11,.10) 44%,rgba(25,3,11,.62) 100%)!important;
+}
+.v311-profile-hero .profile-identity{
+  position:absolute!important;
+  left:34px!important;
+  right:34px!important;
+  bottom:26px!important;
+  top:auto!important;
+  z-index:3!important;
+  display:flex!important;
+  align-items:flex-end!important;
+  gap:20px!important;
+  padding:0!important;
+  margin:0!important;
+  color:#fff!important;
+  pointer-events:none;
+}
+.v311-profile-hero .profile-identity>*{pointer-events:auto}
+.v311-profile-hero .profile-avatar-large-frame.v311-avatar-viewport{
+  position:relative!important;
+  width:112px!important;
+  height:112px!important;
+  min-width:112px!important;
+  min-height:112px!important;
+  flex:0 0 112px!important;
+  overflow:hidden!important;
+  border-radius:28px!important;
+  border:4px solid rgba(255,255,255,.94)!important;
+  background:#fff!important;
+  box-shadow:0 16px 38px rgba(0,0,0,.25)!important;
+}
+.v311-profile-hero .profile-avatar-large-frame>.profile-avatar-large{
+  position:absolute!important;
+  inset:0!important;
+  width:100%!important;
+  height:100%!important;
+  max-width:none!important;
+  max-height:none!important;
+  border:0!important;
+  border-radius:0!important;
+  box-shadow:none!important;
+  object-fit:cover!important;
+  object-position:center!important;
+  transform:none!important;
+}
+.v311-profile-hero .profile-name-row h1,
+.v311-profile-hero .profile-identity p,
+.v311-profile-hero .profile-membership-text{ text-shadow:0 2px 12px rgba(0,0,0,.35); }
+.v311-profile-hero .cover-camera{z-index:5!important}
+.v311-profile-hero .avatar-camera{z-index:5!important}
+
+/* The profile overview always starts below the hero; no layer can push it down. */
+.v37-profile-overview{position:relative!important;z-index:0!important;clear:both!important}
+
+@media(max-width:760px){
+  .v311-profile-hero{height:250px!important;min-height:250px!important}
+  .v311-profile-hero .profile-identity{
+    left:18px!important;right:18px!important;bottom:18px!important;gap:13px!important;
+  }
+  .v311-profile-hero .profile-avatar-large-frame.v311-avatar-viewport{
+    width:78px!important;height:78px!important;min-width:78px!important;min-height:78px!important;flex-basis:78px!important;
+    border-radius:21px!important;border-width:3px!important;
+  }
+}
+@media(max-width:520px){
+  .v311-profile-hero{height:220px!important;min-height:220px!important;border-radius:20px!important}
+  .v311-profile-hero .profile-identity{left:14px!important;right:14px!important;bottom:14px!important;gap:11px!important}
+  .v311-profile-hero .profile-avatar-large-frame.v311-avatar-viewport{
+    width:68px!important;height:68px!important;min-width:68px!important;min-height:68px!important;flex-basis:68px!important;border-radius:18px!important;
+  }
+  .v311-profile-hero .profile-name-row h1{font-size:20px!important}
+}
