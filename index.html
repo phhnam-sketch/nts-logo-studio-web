@@ -8,7 +8,7 @@
   <title>NTS Logo Studio Pro Web</title>
   <link rel="icon" href="assets/brand/logo.png" type="image/png" />
   <link rel="preload" as="image" href="assets/login/login-hero.png" fetchpriority="high" />
-  <link rel="stylesheet" href="assets/styles.css?v=3.15.0" />
+  <link rel="stylesheet" href="assets/styles.css?v=3.16.0" />
 </head>
 <body>
   <div id="toastStack" class="toast-stack" aria-live="polite" aria-atomic="false"></div>
@@ -138,7 +138,7 @@
         <img class="brand-logo-image small" src="assets/brand/logo.png" alt="NTS" />
         <div class="app-brand-text">
           <strong>LOGO STUDIO PRO</strong>
-          <span>WEB V3.15</span>
+          <span>WEB V3.16</span>
         </div>
       </div>
 
@@ -656,6 +656,11 @@
         <div class="admin-header"><div><span class="auth-badge">ADMIN CONTROL</span><h1>Trung tâm quản trị</h1><p>Quản lý hội viên, thanh toán, phản hồi cộng đồng, lịch sử gói và chế độ bảo trì.</p></div><button id="refreshAdminButton" class="secondary-button" type="button">↻ Làm mới</button></div>
         <div class="admin-stats-grid"><article><span>Tổng hội viên</span><strong id="statTotalUsers">0</strong></article><article><span>VIP</span><strong id="statVipUsers">0</strong></article><article><span>Free</span><strong id="statFreeUsers">0</strong></article><article><span>Chờ thanh toán</span><strong id="statPendingPayments">0</strong></article><article><span>Tạm khóa</span><strong id="statSuspended">0</strong></article><article><span>Doanh thu duyệt tháng</span><strong id="statRevenue">0 ₫</strong></article></div>
 
+        <div class="content-card admin-section v316-health-card">
+          <div class="admin-section-head"><div><span class="eyebrow">SYSTEM HEALTH</span><h2>Tình trạng hệ thống</h2><p>Kiểm tra trực tiếp Core, Community, Payment, Avatar và Admin schema. Không làm chậm engine xử lý ảnh.</p></div><div class="v316-health-actions"><span id="adminSystemHealthVersion" class="v37-state-pill">Đang kiểm tra...</span><button id="refreshSystemHealth" class="secondary-button compact" type="button">↻ Kiểm tra</button></div></div>
+          <div id="adminSystemHealth" class="v316-health-grid"><div class="v316-health-summary"><strong>Đang kiểm tra database...</strong><span>Quá trình này chạy độc lập với Studio.</span></div></div>
+        </div>
+
         <div class="content-card admin-section"><div class="admin-section-head admin-member-head"><div><span class="eyebrow">HỘI VIÊN</span><h2>Quản lý tài khoản</h2><p>Thêm, chỉnh sửa, khóa, reset quota hoặc xóa tài khoản từ một nơi.</p></div><div class="admin-member-tools"><div class="search-shell admin-search"><span>⌕</span><input id="adminMemberSearch" type="search" placeholder="Tìm email hoặc tên..." /></div><button id="createMemberButton" class="primary-button compact" type="button">＋ Thêm hội viên</button></div></div><div class="table-scroll desktop-member-table"><table class="admin-table"><thead><tr><th>Hội viên</th><th>Gói</th><th>Trạng thái</th><th>Đã dùng</th><th>Quota riêng</th><th>VIP đến</th><th>Ngày tạo</th><th></th></tr></thead><tbody id="adminMembersBody"><tr><td colspan="8" class="table-empty">Đang tải...</td></tr></tbody></table></div><div id="adminMembersMobile" class="admin-members-mobile"><div class="empty-admin-card">Đang tải...</div></div></div>
 
         <div class="content-card admin-section"><div class="admin-section-head"><div><span class="eyebrow">THANH TOÁN</span><h2>Thanh toán & đối soát</h2></div><select id="adminPaymentFilter"><option value="pending">Chờ duyệt</option><option value="approved">Đã duyệt</option><option value="rejected">Từ chối</option><option value="all">Tất cả</option></select></div><div id="adminPaymentsList" class="admin-payments-list"><div class="empty-admin-card">Đang tải...</div></div></div>
@@ -818,22 +823,23 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=3.15.0"></script>
-  <script src="js/auth.js?v=3.15.0"></script>
-  <script src="js/avatar-service.js?v=3.15.0"></script>
-  <script src="js/membership.js?v=3.15.0"></script>
-  <script src="js/profile-transform.js?v=3.15.0"></script>
-  <script src="js/profile.js?v=3.15.0"></script>
-  <script src="js/profile-media-modal.js?v=3.15.0"></script>
-  <script src="js/admin.js?v=3.15.0"></script>
-  <script src="js/community.js?v=3.15.0"></script>
-  <script src="js/admin-community.js?v=3.15.0"></script>
-  <script src="js/maintenance.js?v=3.15.0"></script>
+  <script src="js/config.js?v=3.16.0"></script>
+  <script src="js/auth.js?v=3.16.0"></script>
+  <script src="js/system-health.js?v=3.16.0"></script>
+  <script src="js/avatar-service.js?v=3.16.0"></script>
+  <script src="js/membership.js?v=3.16.0"></script>
+  <script src="js/profile-transform.js?v=3.16.0"></script>
+  <script src="js/profile.js?v=3.16.0"></script>
+  <script src="js/profile-media-modal.js?v=3.16.0"></script>
+  <script src="js/admin.js?v=3.16.0"></script>
+  <script src="js/community.js?v=3.16.0"></script>
+  <script src="js/admin-community.js?v=3.16.0"></script>
+  <script src="js/maintenance.js?v=3.16.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script src="js/ui-v36.js?v=3.15.0"></script>
-  <script src="js/ui-v37.js?v=3.15.0"></script>
-  <script src="js/mobile-v392.js?v=3.15.0"></script>
-  <script src="js/app.js?v=3.15.0"></script>
+  <script src="js/ui-v36.js?v=3.16.0"></script>
+  <script src="js/ui-v37.js?v=3.16.0"></script>
+  <script src="js/mobile-v392.js?v=3.16.0"></script>
+  <script src="js/app.js?v=3.16.0"></script>
 </body>
 </html>

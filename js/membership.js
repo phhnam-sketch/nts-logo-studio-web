@@ -63,18 +63,37 @@
     if (!c || !state.user) return null;
     if (!silent) state.loading = true;
     try {
-      const { data, error } = await c.rpc("get_my_account_state");
-      if (error) throw error;
+      // V3.16 self-heals a missing profile/membership row without blocking the UI.
+      await NTS.health?.ensureAccount?.();
+      const read = async () => {
+        const request = c.rpc("get_my_account_state");
+        return NTS.health?.withTimeout ? NTS.health.withTimeout(request, 8500, "account state") : request;
+      };
+      const result = NTS.health?.retry
+        ? await NTS.health.retry(read, { attempts: 3 })
+        : await read();
+      if (result?.error) throw result.error;
+      const data = result?.data;
       state.account = Array.isArray(data) ? data[0] : data;
       if (!state.account) state.account = defaultAccount();
       renderAccount();
       window.dispatchEvent(new CustomEvent("nts:membership-updated", { detail: { account: state.account } }));
       return state.account;
     } catch (error) {
-      console.error(error);
-      state.account = defaultAccount();
+      console.error("refreshAccount", error);
+      // A transient network problem must not demote an ADMIN/VIP UI to FREE.
+      if (!state.account) state.account = defaultAccount();
       renderAccount();
-      if (!silent) toast("Chưa cài database V3.2", "Hãy chạy migration 001, 002 và 003_v3_2_profile_payment.sql trong Supabase SQL Editor.", "warning", 9000);
+      if (!silent) {
+        const info = NTS.health?.friendly?.(error, "quyền tài khoản") || { kind:"unknown", title:"Không tải được quyền tài khoản", message:String(error?.message || error) };
+        if (info.kind === "schema") {
+          NTS.health?.notifyOnce?.("membership-schema", info.title, info.message, "warning", 10000) || toast(info.title, info.message, "warning", 10000);
+        } else if (info.kind === "network") {
+          NTS.health?.notifyOnce?.("membership-network", info.title, info.message, "warning", 6500) || toast(info.title, info.message, "warning", 6500);
+        } else {
+          toast(info.title, info.message, "error", 8000);
+        }
+      }
       return state.account;
     } finally { state.loading = false; }
   }
@@ -281,7 +300,7 @@
         p_proof_path: proofPath
       });
       if (error) {
-        if (/submit_vip_payment_v32|schema cache|function/i.test(String(error.message || error))) throw new Error("Database chưa có Smart Payment V3.2. Hãy chạy `supabase/003_v3_2_profile_payment.sql`.");
+        if (/submit_vip_payment_v32|schema cache|function/i.test(String(error.message || error))) throw new Error("Database chưa hoàn tất schema thanh toán. Hãy chạy một lần `supabase/017_v3_16_full_system_repair.sql` trong Supabase SQL Editor rồi thử lại.");
         throw error;
       }
       $("vipPaymentForm")?.reset();

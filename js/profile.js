@@ -93,8 +93,8 @@
   function mediaAdjust(kind) {
     const p = state.profile || defaults();
     return kind === "avatar"
-      ? { x: clamp(p.avatar_pos_x,0,100,50), y: clamp(p.avatar_pos_y,0,100,50), zoom: clamp(p.avatar_zoom,35,500,100) }
-      : { x: clamp(p.cover_pos_x,0,100,50), y: clamp(p.cover_pos_y,0,100,50), zoom: clamp(p.cover_zoom,35,500,100) };
+      ? { x: clamp(p.avatar_pos_x,0,100,50), y: clamp(p.avatar_pos_y,0,100,50), zoom: clamp(p.avatar_zoom,25,500,100) }
+      : { x: clamp(p.cover_pos_x,0,100,50), y: clamp(p.cover_pos_y,0,100,50), zoom: clamp(p.cover_zoom,25,500,100) };
   }
   function applyMediaAdjust(kind) {
     const a = mediaAdjust(kind);
@@ -294,7 +294,7 @@
       const sw = Number(decoded.width || decoded.naturalWidth || 0);
       const sh = Number(decoded.height || decoded.naturalHeight || 0);
       if (!sw || !sh) throw new Error("Không đọc được ảnh để tạo thumbnail.");
-      const size = 160;
+      const size = 128;
       const canvas = typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(size, size) : document.createElement("canvas");
       canvas.width = size; canvas.height = size;
       const ctx = canvas.getContext("2d", { alpha:false, desynchronized:true });
@@ -305,8 +305,8 @@
       const sy = Math.max(0, (sh - side) / 2);
       ctx.drawImage(decoded, sx, sy, side, side, 0, 0, size, size);
       const out = canvas.convertToBlob
-        ? await canvas.convertToBlob({ type:"image/jpeg", quality:.84 })
-        : await canvasBlob(canvas, "image/jpeg", .84);
+        ? await canvas.convertToBlob({ type:"image/jpeg", quality:.78 })
+        : await canvasBlob(canvas, "image/jpeg", .78);
       canvas.width = canvas.height = 1;
       const dataUrl = await blobToDataUrl(out);
       if (dataUrl.length > 180000) throw new Error("Thumbnail avatar vượt giới hạn an toàn.");

@@ -346,14 +346,15 @@
     }
   }
 
-  function bindImage(img, member, { lazy = true, hydrate = true } = {}) {
+  function bindImage(img, member, { lazy = false, hydrate = true } = {}) {
     if (!img) return;
     const m = mergedMember(member);
     const id = uidOf(m);
     remember(img, m);
     applyCrop(img, m);
     img.decoding = "async";
-    if (lazy) img.loading = "lazy";
+    img.loading = lazy ? "lazy" : "eager";
+    try { img.fetchPriority = lazy ? "auto" : "high"; } catch (_) {}
     img.alt ||= m?.display_name ? `Ảnh đại diện ${m.display_name}` : "Ảnh đại diện";
 
     const token = `${id}:${Date.now()}:${Math.random()}`;
@@ -474,7 +475,7 @@
       const id = String(wrap.dataset.userId || "").trim();
       const img = wrap.querySelector(".v310-avatar-frame > img, img");
       if (!id || !img) return;
-      if (img.dataset.ntsAvatarUser !== id) bindImage(img, { user_id:id }, { lazy:true, hydrate:true });
+      if (img.dataset.ntsAvatarUser !== id) bindImage(img, { user_id:id }, { lazy:false, hydrate:true });
       else scheduleHydrate(id);
     });
   }
