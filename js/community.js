@@ -33,14 +33,8 @@
     incomingPreviewTimer: null
   };
 
-  function roleLabel(member) {
-    if (member?.role === "admin") return "ADMIN";
-    if (member?.is_vip) return "VIP";
-    return "FREE";
-  }
-  function roleClass(member) {
-    return member?.role === "admin" ? "admin" : member?.is_vip ? "vip" : "free";
-  }
+  function roleLabel(member) { return NTS.avatar?.roleLabel?.(member) || (member?.role === "admin" ? "ADMIN" : member?.is_vip ? "VIP" : "FREE"); }
+  function roleClass(member) { return NTS.avatar?.roleClass?.(member) || (member?.role === "admin" ? "admin" : member?.is_vip ? "vip" : "free"); }
   function formatTime(value) {
     if (!value) return "";
     try {
@@ -76,20 +70,40 @@
   }
 
 
-  function avatarUrl(member) {
-    const raw = String(member?.avatar_url || "").trim();
-    if (!raw) return fallbackAvatar();
-    if (!raw.includes("/storage/v1/object/public/profile-media/")) return raw;
-    if (!member?.avatar_version) return raw;
+  function storageAvatarUrl(member) {
+    const id = peerId(member);
+    if (!id || !client()?.storage) return null;
     try {
-      const u = new URL(raw, window.location.href);
-      const version = new Date(member.avatar_version).getTime();
-      u.searchParams.set("v", String(Number.isFinite(version) ? version : member.avatar_version));
+      const { data } = client().storage.from("profile-media").getPublicUrl(`${id}/avatar.jpg`);
+      return data?.publicUrl || null;
+    } catch (_) { return null; }
+  }
+
+  function addAvatarVersion(url, version) {
+    if (!url || String(url).startsWith("blob:") || String(url).startsWith("data:")) return url;
+    try {
+      const u = new URL(url, window.location.href);
+      const stamp = version ? new Date(version).getTime() : Date.now();
+      u.searchParams.set("v", String(Number.isFinite(stamp) ? stamp : version || Date.now()));
       return u.href;
     } catch (_) {
-      const joiner = raw.includes("?") ? "&" : "?";
-      return `${raw}${joiner}v=${encodeURIComponent(member.avatar_version)}`;
+      const joiner = String(url).includes("?") ? "&" : "?";
+      return `${url}${joiner}v=${encodeURIComponent(version || Date.now())}`;
     }
+  }
+
+  function avatarCandidates(member) {
+    const values = [];
+    const raw = String(member?.avatar_url || "").trim();
+    if (raw) values.push(addAvatarVersion(raw, member?.avatar_version));
+    const canonical = storageAvatarUrl(member);
+    if (canonical && !values.includes(canonical)) values.push(addAvatarVersion(canonical, member?.avatar_version));
+    values.push(fallbackAvatar());
+    return [...new Set(values.filter(Boolean))];
+  }
+
+  function avatarUrl(member) {
+    return avatarCandidates(member)[0] || fallbackAvatar();
   }
 
   async function rpcWithFallback(primary, fallback, args) {
@@ -98,6 +112,17 @@
     const message = String(first.error?.message || "");
     if (!/function|schema cache|does not exist|PGRST202/i.test(message)) return first;
     return client().rpc(fallback, args);
+  }
+
+  async function safeRpc(name, args, { silent = true } = {}) {
+    try {
+      const result = await client().rpc(name, args);
+      if (result?.error) throw result.error;
+      return result?.data ?? null;
+    } catch (error) {
+      if (!silent) console.warn(`RPC ${name} failed`, error);
+      return null;
+    }
   }
 
   function setTab(tab) {
@@ -117,15 +142,8 @@
     frame.className = "v310-avatar-frame";
     const img = document.createElement("img");
     img.alt = member?.display_name ? `Ảnh đại diện ${member.display_name}` : "Ảnh đại diện";
-    img.decoding = "async";
-    img.loading = "lazy";
-    img.src = avatarUrl(member);
-    const px = Math.max(0, Math.min(100, Number(member?.avatar_pos_x ?? 50)));
-    const py = Math.max(0, Math.min(100, Number(member?.avatar_pos_y ?? 50)));
-    const pz = Math.max(35, Math.min(500, Number(member?.avatar_zoom ?? 100)));
-    img.style.objectPosition = `${px}% ${py}%`;
-    img.style.setProperty("--v310-avatar-zoom", String(pz / 100));
-    img.onerror = () => { img.onerror = null; img.src = fallbackAvatar(); img.style.objectPosition = "50% 50%"; img.style.setProperty("--v310-avatar-zoom", "1"); };
+    NTS.avatar?.bindImage?.(img, member);
+    if (Number(member?.avatar_crop_version || 0) >= 1) img.dataset.v311Final = "1";
     frame.append(img);
     const badge = document.createElement("span");
     badge.className = `v37-role-dot ${roleClass(member)}`;
@@ -152,7 +170,7 @@
   async function loadDirectory(search = "") {
     if (!state.user || !client()) return;
     try {
-      const { data, error } = await rpcWithFallback("list_member_directory_v310", "list_member_directory", { p_search: search.trim(), p_limit: 60 });
+      const { data, error } = await rpcWithFallback("list_member_directory_v311", "list_member_directory_v310", { p_search: search.trim(), p_limit: 60 });
       if (error) throw error;
       state.directory = Array.isArray(data) ? data : [];
       renderDirectory();
@@ -167,7 +185,7 @@
   async function loadMessengerContacts({ silent = false } = {}) {
     if (!state.user || !client()) return;
     try {
-      const { data, error } = await rpcWithFallback("list_messenger_contacts_v310", "list_messenger_contacts", { p_limit: 60 });
+      const { data, error } = await rpcWithFallback("list_messenger_contacts_v311", "list_messenger_contacts_v310", { p_limit: 60 });
       if (error) throw error;
       state.messengerContacts = Array.isArray(data) ? data : [];
       state.unread = state.messengerContacts.reduce((sum, x) => sum + Number(x.unread_count || 0), 0);
@@ -287,17 +305,17 @@
   }
 
   function closeMessageChannel() {
-    if (state.messageChannel && client()) client().removeChannel(state.messageChannel).catch?.(() => {});
+    if (state.messageChannel && client()) { try { void client().removeChannel(state.messageChannel); } catch (_) {} }
     state.messageChannel = null;
   }
   function closeFriendshipChannel() {
-    if (state.friendshipChannel && client()) client().removeChannel(state.friendshipChannel).catch?.(() => {});
+    if (state.friendshipChannel && client()) { try { void client().removeChannel(state.friendshipChannel); } catch (_) {} }
     state.friendshipChannel = null;
   }
   function closePresenceChannel() {
     if (state.presenceChannel && client()) {
       try { state.presenceChannel.untrack?.(); } catch (_) {}
-      client().removeChannel(state.presenceChannel).catch?.(() => {});
+      try { void client().removeChannel(state.presenceChannel); } catch (_) {}
     }
     state.presenceChannel = null;
     state.onlineUserIds.clear();
@@ -315,7 +333,7 @@
   async function getMemberPublic(id) {
     const found = findMember(id); if (found) return found;
     try {
-      const { data, error } = await rpcWithFallback("get_member_public_profile_v310", "get_member_public_profile", { p_user: id });
+      const { data, error } = await rpcWithFallback("get_member_public_profile_v311", "get_member_public_profile_v310", { p_user: id });
       if (error) throw error;
       const row = Array.isArray(data) ? data[0] : data;
       return row ? normalizeContact({ ...row, peer_id: row.user_id }) : null;
@@ -341,9 +359,23 @@
   }
 
   async function fetchConversation(peer, limit = 80) {
-    const { data, error } = await client().rpc("list_direct_messages", { p_peer: peer, p_limit: limit, p_before: null });
-    if (error) throw error;
-    return Array.isArray(data) ? data : [];
+    const args = { p_peer: peer, p_limit: limit, p_before: null };
+    const names = ["list_direct_messages_v311", "list_direct_messages_v3101", "list_direct_messages"];
+    let lastError = null;
+    for (const name of names) {
+      try {
+        const result = await client().rpc(name, args);
+        if (!result?.error) return Array.isArray(result?.data) ? result.data : [];
+        lastError = result.error;
+        const msg = String(result.error?.message || "");
+        if (!/function|schema cache|does not exist|PGRST202/i.test(msg)) throw result.error;
+      } catch (error) {
+        lastError = error;
+        const msg = String(error?.message || "");
+        if (!/function|schema cache|does not exist|PGRST202/i.test(msg)) throw error;
+      }
+    }
+    throw lastError || new Error("Không tìm thấy RPC đọc hội thoại. Hãy chạy migration 010 V3.11.");
   }
 
   async function loadMessages() {
@@ -356,7 +388,7 @@
       await markPeerRead(state.activePeer.user_id);
     } catch (error) {
       console.error("loadMessages", error);
-      if (root) root.innerHTML = `<div class="v37-chat-empty"><strong>Không tải được tin nhắn.</strong><br><small>${escapeHtml(error?.message || "Hãy chạy migration 006 V3.8.")}</small></div>`;
+      if (root) root.innerHTML = `<div class="v37-chat-empty"><strong>Không tải được tin nhắn.</strong><br><small>${escapeHtml(error?.message || "Hãy chạy migration 010 V3.11 và tải lại trang.")}</small></div>`;
     } finally { state.loadingMessages = false; }
   }
 
@@ -481,7 +513,7 @@
 
   async function markPeerRead(id) {
     if (!id || !client()) return;
-    await client().rpc("mark_messages_read", { p_peer: id }).catch(() => {});
+    await safeRpc("mark_messages_read", { p_peer: id });
     await loadMessengerContacts({ silent: true });
   }
 
@@ -526,7 +558,7 @@
     if (float) appendMessageToRoot(float.messages, row, true);
 
     if (isConversationVisible(row.sender_id)) {
-      await client().rpc("mark_messages_read", { p_peer: row.sender_id }).catch(() => {});
+      await safeRpc("mark_messages_read", { p_peer: row.sender_id });
       scheduleContactsRefresh(80);
     } else {
       state.unread += 1; renderUnread();
@@ -560,7 +592,7 @@
       })
       .subscribe(async status => {
         if (status !== "SUBSCRIBED") return;
-        await channel.track({ user_id: state.user.id, online_at: new Date().toISOString(), page: "app" }).catch?.(() => {});
+        try { await channel.track({ user_id: state.user.id, online_at: new Date().toISOString(), page: "app" }); } catch (_) {}
       });
   }
 
@@ -688,7 +720,7 @@
       else { const frag = document.createDocumentFragment(); rows.forEach(row => frag.append(messageNode(row, true))); entry.messages.append(frag); entry.messages.scrollTop = entry.messages.scrollHeight; }
     } catch (error) {
       console.error("floating messages", error);
-      entry.messages.innerHTML = `<div class="v38-float-empty"><strong>Không tải được tin nhắn</strong><span>${escapeHtml(error?.message || "Chạy migration 006.")}</span></div>`;
+      entry.messages.innerHTML = `<div class="v38-float-empty"><strong>Không tải được tin nhắn</strong><span>${escapeHtml(error?.message || "Chạy migration 010 V3.11.")}</span></div>`;
     }
   }
 
@@ -705,7 +737,8 @@
   function updateFloatingWindowHeader(id) {
     const entry = state.floatingWindows.get(String(id)); if (!entry) return;
     const small = entry.el.querySelector(".v38-chat-window-peer small"); if (small) small.textContent = roleLabel(entry.member);
-    const avatar = entry.el.querySelector(".v37-member-avatar"); avatar?.classList.toggle("is-online", isOnline(id));
+    const oldAvatar = entry.el.querySelector(".v37-member-avatar");
+    if (oldAvatar) oldAvatar.replaceWith(memberAvatar(entry.member, true));
   }
 
   function showIncomingPreview(member, row) {
@@ -779,6 +812,13 @@
   $("messengerPanelClose")?.addEventListener("click", () => toggleMessengerPanel(false));
 
   window.addEventListener("nts:page-changed", e => { const page = e.detail?.pageId; if (page === "communityPage") enterCommunity(); else leaveCommunity(); });
+  window.addEventListener("nts:profile-saved", () => {
+    if (!state.user) return;
+    // Refresh visible community surfaces so saved avatars/crops propagate immediately.
+    loadDirectory($("communityMemberSearch")?.value || "");
+    loadMessengerContacts({ silent: true });
+  });
+
   window.addEventListener("nts:auth-user", e => {
     state.user = e.detail?.user || null;
     if (!state.user) { stopGlobalRealtime(); state.directory = []; closeChat(); }
@@ -787,11 +827,6 @@
   window.addEventListener("nts:membership-updated", e => { state.account = e.detail?.account || null; });
   window.addEventListener("beforeunload", () => stopGlobalRealtime());
 
-  window.addEventListener("nts:profile-saved", () => {
-    if (!state.user) return;
-    if (state.pageOpen) loadDirectory(document.getElementById("communityMemberSearch")?.value || "");
-    loadMessengerContacts({ silent: true });
-  });
 
   window.addEventListener("online", () => { if (state.user) startGlobalRealtime(); });
 

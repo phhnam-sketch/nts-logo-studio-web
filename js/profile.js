@@ -21,7 +21,8 @@
   function defaults() { return {
     display_name: "Người dùng", bio: "", avatar_url: null, cover_url: null, updated_at: null,
     avatar_pos_x: 50, avatar_pos_y: 50, avatar_zoom: 100,
-    cover_pos_x: 50, cover_pos_y: 50, cover_zoom: 100
+    cover_pos_x: 50, cover_pos_y: 50, cover_zoom: 100,
+    avatar_crop_version: 0, cover_crop_version: 0
   }; }
   function brandFallback(kind) {
     const brand = cfg.BRAND || {};
@@ -95,13 +96,25 @@
   }
   function applyMediaAdjust(kind) {
     const a = mediaAdjust(kind);
-    const ids = kind === "avatar" ? ["profileAvatarPreview", "avatarEditorPreview"] : ["profileCoverPreview", "coverEditorPreview"];
+    const p = state.profile || defaults();
+    const isFinalCrop = Number(kind === "avatar" ? p.avatar_crop_version : p.cover_crop_version) >= 1;
+    // V3.11: summary/topbar are fixed frames. New media is already physically cropped,
+    // so the saved image itself never changes the frame size. Legacy profiles retain
+    // their old transform until the owner resaves through the new Facebook-like editor.
+    const ids = kind === "avatar" ? ["profileAvatarPreview", "userAvatarImage"] : ["profileCoverPreview"];
     ids.forEach(id => {
       const img = $(id);
       if (!img) return;
-      img.style.objectPosition = `${a.x}% ${a.y}%`;
-      img.style.setProperty("--profile-media-zoom", String(a.zoom / 100));
+      img.style.objectPosition = "50% 50%";
+      img.style.transform = isFinalCrop ? "none" : `translate3d(${a.x - 50}%, ${a.y - 50}%, 0) scale(${a.zoom / 100})`;
     });
+    // Legacy inline editor is kept for backward compatibility, but only its own image
+    // receives draft transforms. The profile hero no longer follows sliders live.
+    const editor = $(kind === "avatar" ? "avatarEditorPreview" : "coverEditorPreview");
+    if (editor) {
+      editor.style.objectPosition = "50% 50%";
+      editor.style.transform = `translate3d(${a.x - 50}%, ${a.y - 50}%, 0) scale(${a.zoom / 100})`;
+    }
     const prefix = kind === "avatar" ? "avatar" : "cover";
     [[`${prefix}PosX`, a.x],[`${prefix}PosY`, a.y],[`${prefix}Zoom`, a.zoom]].forEach(([id,val]) => { if ($(id)) $(id).value = String(val); });
     [[`${prefix}PosXValue`, `${Math.round(a.x)}%`],[`${prefix}PosYValue`, `${Math.round(a.y)}%`],[`${prefix}ZoomValue`, `${Math.round(a.zoom)}%`]].forEach(([id,val]) => { if ($(id)) $(id).textContent = val; });
@@ -139,10 +152,12 @@
     setImg("coverEditorPreview", cover, brandFallback("cover"));
     syncEditorVisibility("avatar");
     syncEditorVisibility("cover");
+    const finalAvatar = Number(p.avatar_crop_version || 0) >= 1;
+    $("profileAvatarPreview")?.classList.toggle("v311-final-avatar", finalAvatar);
     if ($("userAvatarImage")) {
       setImg("userAvatarImage", avatar, brandFallback("avatar"));
+      $("userAvatarImage").classList.toggle("v311-final-avatar", finalAvatar);
       $("userAvatarImage").classList.remove("hidden");
-      $("userAvatarImage").style.objectPosition = `${mediaAdjust("avatar").x}% ${mediaAdjust("avatar").y}%`;
       $("userAvatarFallback")?.classList.add("hidden");
     }
     if ($("userDisplayName")) $("userDisplayName").textContent = p.display_name || "Người dùng";
@@ -261,7 +276,7 @@
   async function removeStoredPath(url) {
     const path = storagePathFromPublicUrl(url);
     if (!path || !state.user || !path.startsWith(`${state.user.id}/`)) return;
-    await client().storage.from("profile-media").remove([path]).catch(() => {});
+    try { await client().storage.from("profile-media").remove([path]); } catch (_) {}
   }
 
   async function uploadProfileMedia(file, kind, oldUrl) {
@@ -290,6 +305,130 @@
     revokeUrl("previewUrls", kind);
     state.previewUrls[kind] = URL.createObjectURL(normalized.blob);
     return cacheBust(data.publicUrl, Date.now());
+  }
+
+
+  function canonicalMediaUrl(kind, stamp = Date.now()) {
+    if (!state.user || !client()?.storage) return null;
+    try {
+      const { data } = client().storage.from("profile-media").getPublicUrl(`${state.user.id}/${kind}.jpg`);
+      return data?.publicUrl ? cacheBust(data.publicUrl, stamp) : null;
+    } catch (_) { return null; }
+  }
+
+  function sourceMediaUrl(kind, stamp = Date.now()) {
+    if (!state.user || !client()?.storage) return null;
+    try {
+      const { data } = client().storage.from("profile-media").getPublicUrl(`${state.user.id}/${kind}-source.jpg`);
+      return data?.publicUrl ? cacheBust(data.publicUrl, stamp) : null;
+    } catch (_) { return null; }
+  }
+
+  async function uploadBlob(path, blob) {
+    const { error } = await client().storage.from("profile-media").upload(path, blob, {
+      upsert: true, cacheControl: "0", contentType: "image/jpeg"
+    });
+    if (error) throw error;
+  }
+
+  async function getMediaSourceUrl(kind) {
+    const p = state.profile || defaults();
+    if (!state.user) return null;
+    if (Number(kind === "avatar" ? p.avatar_crop_version : p.cover_crop_version) >= 1) {
+      const source = sourceMediaUrl(kind, p.updated_at || Date.now());
+      if (source) {
+        try { await imageLoads(source); return source; } catch (_) {}
+      }
+    }
+    return effectiveMedia(kind);
+  }
+
+  function hasSavedMedia(kind) {
+    const p = state.profile || defaults();
+    return kind === "avatar" ? Boolean(p.avatar_url) : Boolean(p.cover_url);
+  }
+
+  function getSavedCrop(kind) {
+    return mediaAdjust(kind);
+  }
+
+  async function saveMediaCrop(kind, { sourceFile = null, cropBlob, crop }) {
+    if (!state.user || !client()) throw new Error("Bạn cần đăng nhập lại trước khi lưu ảnh.");
+    if (!(cropBlob instanceof Blob)) throw new Error("Không tạo được dữ liệu ảnh sau khi cắt.");
+    if (state.saving) throw new Error("Hồ sơ đang được lưu. Vui lòng đợi một chút.");
+    state.saving = true;
+    const path = `${state.user.id}/${kind}.jpg`;
+    const sourcePath = `${state.user.id}/${kind}-source.jpg`;
+    try {
+      mediaStatus(`Đang cập nhật ${kind === "avatar" ? "ảnh đại diện" : "ảnh bìa"}...`, "busy");
+      const jobs = [uploadBlob(path, cropBlob)];
+      if (sourceFile) {
+        const normalized = await normalizeProfileImage(sourceFile, kind);
+        jobs.push(uploadBlob(sourcePath, normalized.blob));
+      }
+      await Promise.all(jobs);
+      const { data: publicData } = client().storage.from("profile-media").getPublicUrl(path);
+      if (!publicData?.publicUrl) throw new Error("Không tạo được URL ảnh sau khi tải lên.");
+      const prefix = kind === "avatar" ? "avatar" : "cover";
+      const payload = {
+        [`${prefix}_url`]: publicData.publicUrl,
+        [`${prefix}_pos_x`]: clamp(crop?.x, 0, 100, 50),
+        [`${prefix}_pos_y`]: clamp(crop?.y, 0, 100, 50),
+        [`${prefix}_zoom`]: clamp(crop?.zoom, 100, 500, 100),
+        [`${prefix}_crop_version`]: 1
+      };
+      const { data, error } = await client().from("profiles").update(payload).eq("id", state.user.id).select("*").single();
+      if (error) throw error;
+      state.profile = { ...defaults(), ...data };
+      revokeUrl("runtimeUrls", kind);
+      revokeUrl("previewUrls", kind);
+      state.runtimeUrls[kind] = URL.createObjectURL(cropBlob);
+      if (kind === "avatar") {
+        try {
+          const authResult = await client().auth.updateUser({ data: { avatar_url: publicData.publicUrl } });
+          if (authResult?.error) console.warn("avatar metadata sync", authResult.error);
+        } catch (error) { console.warn("avatar metadata sync", error); }
+        NTS.avatar?.invalidate?.(state.user.id);
+      }
+      render();
+      mediaStatus("Ảnh đã lưu và đồng bộ ngay trên giao diện.", "ok");
+      window.dispatchEvent(new CustomEvent("nts:profile-saved", { detail: { profile: state.profile, kind } }));
+      // CDN verification is intentionally background-only; the UI already shows the local crop.
+      Promise.resolve().then(async () => {
+        try {
+          const remote = cacheBust(publicData.publicUrl, state.profile.updated_at || Date.now());
+          await imageLoads(remote);
+          revokeUrl("runtimeUrls", kind);
+          render();
+        } catch (_) {}
+      });
+      return state.profile;
+    } catch (error) {
+      const message = String(error?.message || error);
+      if (/row-level security|policy|bucket|mime/i.test(message)) {
+        throw new Error("Supabase Storage đang chặn ảnh hồ sơ. Kiểm tra bucket profile-media và policy upload/update của chính người dùng.");
+      }
+      throw error;
+    } finally { state.saving = false; }
+  }
+
+  async function removeMedia(kind) {
+    if (!state.user || !client()) return;
+    const prefix = kind === "avatar" ? "avatar" : "cover";
+    const paths = [`${state.user.id}/${kind}.jpg`, `${state.user.id}/${kind}-source.jpg`];
+    await Promise.allSettled(paths.map(path => client().storage.from("profile-media").remove([path])));
+    const payload = { [`${prefix}_url`]: null, [`${prefix}_pos_x`]:50, [`${prefix}_pos_y`]:50, [`${prefix}_zoom`]:100, [`${prefix}_crop_version`]:0 };
+    const { data, error } = await client().from("profiles").update(payload).eq("id", state.user.id).select("*").single();
+    if (error) throw error;
+    state.profile = { ...defaults(), ...data };
+    revokeUrl("runtimeUrls", kind); revokeUrl("previewUrls", kind);
+    if (kind === "avatar") {
+      try { await client().auth.updateUser({ data: { avatar_url: null } }); } catch (_) {}
+      NTS.avatar?.invalidate?.(state.user.id);
+    }
+    render();
+    window.dispatchEvent(new CustomEvent("nts:profile-saved", { detail: { profile: state.profile, kind } }));
+    return state.profile;
   }
 
   async function save(event) {
@@ -333,7 +472,10 @@
       state.profile = { ...defaults(), ...data };
       render(); // immediate: local normalized blob is already visible here.
 
-      await client().auth.updateUser({ data: { display_name: displayName, avatar_url: avatarUrl || null } }).catch(() => {});
+      try {
+        const authResult = await client().auth.updateUser({ data: { display_name: displayName, avatar_url: avatarUrl || null } });
+        if (authResult?.error) console.warn("auth avatar metadata sync", authResult.error);
+      } catch (authSyncError) { console.warn("auth avatar metadata sync", authSyncError); }
       if ($("profileAvatarInput")) $("profileAvatarInput").value = "";
       if ($("profileCoverInput")) $("profileCoverInput").value = "";
       state.removeAvatar = false; state.removeCover = false;
@@ -396,8 +538,8 @@
 
   $("profileForm")?.addEventListener("submit", save);
   $("saveProfileButtonTop")?.addEventListener("click", () => $("profileForm")?.requestSubmit());
-  $("profileAvatarInput")?.addEventListener("change", e => previewFile(e.target.files?.[0], "avatar"));
-  $("profileCoverInput")?.addEventListener("change", e => previewFile(e.target.files?.[0], "cover"));
+  $("profileAvatarInput")?.addEventListener("change", e => { const file=e.target.files?.[0]; if (file) NTS.profileMediaModal?.open?.("avatar", { file }); });
+  $("profileCoverInput")?.addEventListener("change", e => { const file=e.target.files?.[0]; if (file) NTS.profileMediaModal?.open?.("cover", { file }); });
   $("removeAvatarButton")?.addEventListener("click", () => markRemove("avatar"));
   $("removeCoverButton")?.addEventListener("click", () => markRemove("cover"));
 
@@ -431,6 +573,6 @@
     else { state.profile = null; revokeAllTransient(); }
   });
   window.addEventListener("beforeunload", revokeAllTransient);
-  NTS.profile = { state, refresh };
+  NTS.profile = { state, refresh, saveMediaCrop, removeMedia, getMediaSourceUrl, hasSavedMedia, getSavedCrop, canonicalMediaUrl };
   if (NTS.currentUser) { state.user = NTS.currentUser; refresh(); }
 })();

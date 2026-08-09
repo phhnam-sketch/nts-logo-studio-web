@@ -8,7 +8,7 @@
   <title>NTS Logo Studio Pro Web</title>
   <link rel="icon" href="assets/brand/logo.png" type="image/png" />
   <link rel="preload" as="image" href="assets/login/login-hero.png" fetchpriority="high" />
-  <link rel="stylesheet" href="assets/styles.css" />
+  <link rel="stylesheet" href="assets/styles.css?v=3.11.0" />
 </head>
 <body>
   <div id="toastStack" class="toast-stack" aria-live="polite" aria-atomic="false"></div>
@@ -138,7 +138,7 @@
         <img class="brand-logo-image small" src="assets/brand/logo.png" alt="NTS" />
         <div class="app-brand-text">
           <strong>LOGO STUDIO PRO</strong>
-          <span>WEB V3.10</span>
+          <span>WEB V3.11</span>
         </div>
       </div>
 
@@ -451,11 +451,21 @@
           <div class="v37-profile-heading-actions"><button id="editProfileButton" class="primary-button" type="button">Chỉnh sửa hồ sơ</button><button id="saveProfileButtonTop" class="primary-button v36-save-profile hidden" type="button">Lưu thay đổi</button></div>
         </div>
 
-        <div class="profile-hero-card v36-profile-hero">
-          <img id="profileCoverPreview" class="profile-cover" src="assets/brand/cover-default.png" alt="Ảnh bìa" />
+        <div class="profile-hero-card v36-profile-hero v311-profile-hero">
+          <div class="v311-cover-viewport" title="Bấm ảnh để căn chỉnh lại">
+            <img id="profileCoverPreview" class="profile-cover" src="assets/brand/cover-default.png" alt="Ảnh bìa" />
+            <label class="profile-camera-button cover-camera" title="Chọn ảnh bìa mới" aria-label="Chọn ảnh bìa mới">
+              <span aria-hidden="true">📷</span><input id="profileCoverCameraInput" type="file" accept="image/*" />
+            </label>
+          </div>
           <div class="profile-hero-overlay"></div>
           <div class="profile-identity">
-            <img id="profileAvatarPreview" class="profile-avatar-large" src="assets/brand/avatar-default.png" alt="Ảnh đại diện" />
+            <span class="profile-avatar-large-frame v311-avatar-viewport" title="Bấm ảnh để căn chỉnh lại">
+              <img id="profileAvatarPreview" class="profile-avatar-large" src="assets/brand/avatar-default.png" alt="Ảnh đại diện" />
+              <label class="profile-camera-button avatar-camera" title="Chọn ảnh đại diện mới" aria-label="Chọn ảnh đại diện mới">
+                <span aria-hidden="true">📷</span><input id="profileAvatarCameraInput" type="file" accept="image/*" />
+              </label>
+            </span>
             <div><div class="profile-name-row"><h1 id="profileNameHero">Người dùng</h1><span id="profilePlanBadge" class="plan-badge free">FREE</span></div><p id="profileEmailHero">email@example.com</p><span id="profileMembershipText" class="profile-membership-text">Đang tải gói thành viên...</span></div>
           </div>
         </div>
@@ -472,7 +482,7 @@
           <form id="profileForm" class="content-card profile-form-card v36-glass-card v37-profile-edit-panel hidden">
             <div class="card-heading v37-profile-editor-heading"><div><span class="eyebrow">CHỈNH SỬA</span><h2>Thông tin cá nhân</h2><p>Chọn ảnh mới để mở trình căn vị trí. Ảnh hiện tại vẫn giữ nguyên nếu bạn không thay đổi.</p></div><div class="v37-editor-actions"><button id="cancelProfileEditButton" class="secondary-button compact" type="button">Hủy</button><button id="saveProfileButton" class="primary-button compact" type="submit">Lưu thay đổi</button></div></div>
 
-            <div class="media-upload-grid profile-media-editor-grid v36-profile-media-grid">
+            <div class="media-upload-grid profile-media-editor-grid v36-profile-media-grid v311-legacy-media-editor" aria-hidden="true">
               <section id="avatarMediaEditor" class="media-upload-card enhanced-media-card profile-media-editor v36-media-card" data-media-kind="avatar">
                 <div class="v36-media-card-head"><div><span class="v36-media-icon">◎</span><strong>Ảnh đại diện</strong><p>Dùng JPG/PNG/WebP. Preview hiện ngay khi chọn.</p></div><label class="media-file-button">Chọn ảnh<input id="profileAvatarInput" type="file" accept="image/*" /></label></div>
                 <div id="avatarEditorBody" class="v36-media-editor-body hidden">
@@ -484,7 +494,7 @@
                   <div class="profile-position-controls v36-position-controls">
                     <label><span>Ngang X</span><input id="avatarPosX" type="range" min="0" max="100" value="50"><b id="avatarPosXValue">50%</b></label>
                     <label><span>Dọc Y</span><input id="avatarPosY" type="range" min="0" max="100" value="50"><b id="avatarPosYValue">50%</b></label>
-                    <label><span>Zoom</span><input id="avatarZoom" type="range" min="35" max="500" value="100"><b id="avatarZoomValue">100%</b></label>
+                    <label><span>Zoom</span><input id="avatarZoom" type="range" min="25" max="500" value="100"><b id="avatarZoomValue">100%</b></label>
                   </div>
                   <div class="media-editor-actions v310-transform-actions"><button class="secondary-button compact" type="button" data-profile-command="avatar-fit">Vừa ảnh</button><button class="secondary-button compact" type="button" data-profile-command="avatar-fill">Phủ khung</button><button id="centerAvatarButton" class="secondary-button compact" type="button">Căn giữa</button><button class="text-button" type="button" data-profile-command="avatar-reset">Reset</button><button id="removeAvatarButton" class="text-button danger-text" type="button">Xóa ảnh</button></div>
                 </div>
@@ -502,7 +512,7 @@
                   <div class="profile-position-controls v36-position-controls">
                     <label><span>Ngang X</span><input id="coverPosX" type="range" min="0" max="100" value="50"><b id="coverPosXValue">50%</b></label>
                     <label><span>Dọc Y</span><input id="coverPosY" type="range" min="0" max="100" value="50"><b id="coverPosYValue">50%</b></label>
-                    <label><span>Zoom</span><input id="coverZoom" type="range" min="35" max="500" value="100"><b id="coverZoomValue">100%</b></label>
+                    <label><span>Zoom</span><input id="coverZoom" type="range" min="25" max="500" value="100"><b id="coverZoomValue">100%</b></label>
                   </div>
                   <div class="media-editor-actions v310-transform-actions"><button class="secondary-button compact" type="button" data-profile-command="cover-fit">Vừa ảnh</button><button class="secondary-button compact" type="button" data-profile-command="cover-fill">Phủ khung</button><button id="centerCoverButton" class="secondary-button compact" type="button">Căn giữa</button><button class="text-button" type="button" data-profile-command="cover-reset">Reset</button><button id="removeCoverButton" class="text-button danger-text" type="button">Xóa ảnh</button></div>
                 </div>
@@ -731,6 +741,36 @@
     </div>
   </div>
 
+  <div id="profileMediaModal" class="modal-backdrop hidden v311-media-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="profileMediaModalTitle">
+    <div class="modal-card v311-media-modal">
+      <button id="profileMediaModalClose" class="modal-close" type="button" aria-label="Đóng">×</button>
+      <div class="v311-media-modal-head">
+        <span class="auth-badge">PHOTO EDITOR</span>
+        <h2 id="profileMediaModalTitle">Cập nhật ảnh đại diện</h2>
+        <p id="profileMediaModalSubtitle">Kéo ảnh để chọn đúng vùng hiển thị.</p>
+      </div>
+      <div id="profileMediaModalViewport" class="v311-media-viewport avatar-mode" aria-label="Vùng cắt ảnh">
+        <img id="profileMediaModalImage" alt="Ảnh đang căn chỉnh" draggable="false" />
+        <div class="v311-crop-mask" aria-hidden="true"></div>
+        <div id="profileMediaModalHint" class="v311-crop-result-hint">Khung là kết quả cuối cùng</div>
+        <div id="profileMediaModalLoader" class="v311-media-loader hidden"><i></i><span>Đang lưu ảnh...</span></div>
+      </div>
+      <div class="v311-media-controls">
+        <label><span>Thu phóng</span><input id="profileMediaModalZoom" type="range" min="100" max="500" value="100" /><b id="profileMediaModalZoomValue">100%</b></label>
+        <small>Kéo bằng chuột hoặc một ngón tay · cuộn chuột/chụm hai ngón để zoom.</small>
+      </div>
+      <div class="v311-media-modal-actions secondary-row">
+        <button id="profileMediaModalReplace" class="secondary-button" type="button">Chọn ảnh khác</button>
+        <button id="profileMediaModalReset" class="secondary-button" type="button">Căn giữa</button>
+        <button id="profileMediaModalRemove" class="text-button danger-text" type="button">Xóa ảnh</button>
+      </div>
+      <div class="modal-action-grid v311-media-save-row">
+        <button id="profileMediaModalCancel" class="secondary-button" type="button">Hủy</button>
+        <button id="profileMediaModalSave" class="primary-button" type="button">Lưu</button>
+      </div>
+    </div>
+  </div>
+
   <div id="memberManageModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="memberModalName">
     <form id="memberManageForm" class="modal-card admin-member-modal">
       <button id="memberManageClose" class="modal-close" type="button" aria-label="Đóng">×</button>
@@ -777,19 +817,21 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/config.js"></script>
-  <script src="js/auth.js"></script>
+  <script src="js/auth.js?v=3.11.0"></script>
   <script src="js/membership.js"></script>
-  <script src="js/profile-transform.js"></script>
-  <script src="js/profile.js"></script>
+  <script src="js/avatar-service.js?v=3.11.0"></script>
+  <script src="js/profile-transform.js?v=3.11.0"></script>
+  <script src="js/profile.js?v=3.11.0"></script>
+  <script src="js/profile-media-modal.js?v=3.11.0"></script>
   <script src="js/admin.js"></script>
-  <script src="js/community.js"></script>
-  <script src="js/admin-community.js"></script>
+  <script src="js/community.js?v=3.11.0"></script>
+  <script src="js/admin-community.js?v=3.11.0"></script>
   <script src="js/maintenance.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <script src="js/ui-v36.js"></script>
-  <script src="js/ui-v37.js"></script>
-  <script src="js/mobile-v392.js"></script>
+  <script src="js/ui-v37.js?v=3.11.0"></script>
+  <script src="js/mobile-v392.js?v=3.11.0"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

@@ -1875,3 +1875,142 @@ input[type="range"]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;b
   .v310-transform-actions .danger-text{grid-column:1/-1}
   .v36-drag-hint{max-width:86%;overflow:hidden;text-overflow:ellipsis}
 }
+
+
+/* ========================================================================== */
+/* V3.10.1 FIXED-FRAME PROFILE CROP + AVATAR SYNC                            */
+/* ========================================================================== */
+/* The frame is fixed. Only the media layer moves/scales, like Facebook crop. */
+.v36-crop-surface.v3101-fixed-crop{
+  position:relative!important;
+  overflow:hidden!important;
+  padding:0!important;
+  cursor:grab!important;
+  touch-action:none!important;
+  overscroll-behavior:contain!important;
+  user-select:none!important;
+  background:linear-gradient(145deg,#241017,#10070b)!important;
+  isolation:isolate;
+}
+.v36-crop-surface.v3101-fixed-crop.dragging{cursor:grabbing!important}
+.v36-crop-surface.v3101-fixed-crop>img{
+  position:absolute!important;
+  inset:0!important;
+  width:100%!important;
+  height:100%!important;
+  max-width:none!important;
+  object-fit:cover!important;
+  object-position:50% 50%!important;
+  transform-origin:center center!important;
+  pointer-events:none!important;
+  user-select:none!important;
+  -webkit-user-drag:none!important;
+  transition:none!important;
+  will-change:transform!important;
+}
+/* Avatar viewport itself is the crop circle. No rectangular image is shown outside it. */
+.avatar-crop-surface.v3101-fixed-crop{
+  width:min(300px,88vw)!important;
+  height:auto!important;
+  aspect-ratio:1/1!important;
+  margin:4px auto 16px!important;
+  border-radius:50%!important;
+  box-shadow:0 0 0 4px #fff,0 0 0 6px rgba(172,47,88,.18),0 16px 42px rgba(75,16,39,.18)!important;
+}
+.avatar-crop-surface.v3101-fixed-crop:after{content:none!important;display:none!important}
+.avatar-crop-surface.v3101-fixed-crop .v36-crop-guide{
+  position:absolute!important;inset:0!important;border-radius:50%!important;
+  border:2px solid rgba(255,255,255,.92)!important;box-shadow:inset 0 0 0 1px rgba(125,31,65,.15)!important;
+  pointer-events:none!important;z-index:3!important;
+}
+.avatar-crop-surface.v3101-fixed-crop .v36-crop-guide span{display:none!important}
+.cover-crop-surface.v3101-fixed-crop{
+  width:100%!important;aspect-ratio:16/7!important;height:auto!important;
+  border-radius:20px!important;box-shadow:0 14px 34px rgba(75,16,39,.12)!important;
+}
+.v3101-fixed-crop .v36-drag-hint{z-index:5!important;pointer-events:none!important}
+
+/* Fixed summary avatar frame. The image moves inside; the profile layout never moves. */
+.profile-avatar-large-frame{
+  width:112px;height:112px;flex:0 0 112px;display:block;position:relative;overflow:hidden;
+  border-radius:28px;border:4px solid rgba(255,255,255,.92);box-shadow:0 14px 35px rgba(0,0,0,.22);background:#fff;
+}
+.profile-avatar-large-frame .profile-avatar-large{
+  position:absolute!important;inset:0!important;width:100%!important;height:100%!important;
+  max-width:none!important;border:0!important;border-radius:0!important;box-shadow:none!important;
+  object-fit:cover!important;object-position:50% 50%!important;transform-origin:center!important;will-change:transform!important;
+}
+/* Cover remains a fixed viewport inside the hero card. */
+.v36-profile-hero{overflow:hidden!important}
+.v36-profile-hero .profile-cover{
+  position:absolute!important;inset:0!important;width:100%!important;height:100%!important;
+  object-fit:cover!important;object-position:50% 50%!important;transform-origin:center!important;will-change:transform!important;
+}
+/* Top-bar avatar also clips the same transform. */
+.user-avatar{overflow:hidden!important}
+.user-avatar img{object-position:50% 50%!important;transform-origin:center!important;will-change:transform!important}
+
+/* Community/Messenger: same normalized transform inside fixed mini-avatar frame. */
+.v37-member-avatar .v310-avatar-frame>img{
+  object-position:50% 50%!important;
+  transform-origin:center!important;
+  transition:none!important;
+}
+
+@media(max-width:760px){
+  .avatar-crop-surface.v3101-fixed-crop{width:min(270px,78vw)!important}
+  .profile-avatar-large-frame{width:78px;height:78px;flex-basis:78px;border-radius:21px;border-width:3px}
+}
+@media(max-width:520px){
+  .avatar-crop-surface.v3101-fixed-crop{width:min(240px,76vw)!important}
+}
+
+/* ========================================================================== */
+/* V3.11 FACEBOOK-LIKE PROFILE MEDIA + FIXED GLOBAL AVATAR                    */
+/* ========================================================================== */
+.v311-legacy-media-editor{display:none!important}
+.v311-profile-hero{position:relative!important;overflow:hidden!important}
+.v311-cover-viewport{position:absolute;inset:0;overflow:hidden;border-radius:inherit;z-index:0;cursor:pointer}
+.v311-cover-viewport .profile-cover{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;object-fit:cover!important;object-position:center!important;transform-origin:center!important}
+.v311-avatar-viewport{position:relative!important;overflow:hidden!important;cursor:pointer;isolation:isolate}
+.v311-avatar-viewport .profile-avatar-large{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;object-fit:cover!important;object-position:center!important;transform-origin:center!important}
+.profile-camera-button{position:absolute;display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.93);color:#711a37;border:1px solid rgba(113,26,55,.12);box-shadow:0 8px 24px rgba(53,8,24,.22);z-index:9;cursor:pointer;opacity:.76;transform:translateZ(0) scale(.94);transition:opacity .18s ease,transform .18s ease,box-shadow .18s ease,background .18s ease;backdrop-filter:blur(12px)}
+.profile-camera-button:hover,.profile-camera-button:focus-within{opacity:1;transform:translateZ(0) scale(1.05);background:#fff;box-shadow:0 12px 30px rgba(70,9,31,.28)}
+.profile-camera-button input{position:absolute!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important}
+.profile-camera-button span{font-size:16px;line-height:1}
+.cover-camera{right:18px;top:18px}.avatar-camera{right:2px;bottom:2px;width:34px;height:34px}
+.v311-cover-viewport:hover .cover-camera,.v311-avatar-viewport:hover .avatar-camera{opacity:1}
+.profile-hero-overlay{pointer-events:none!important}
+
+body.profile-media-modal-open{overflow:hidden}
+.v311-media-modal-backdrop{z-index:5600!important;padding:24px!important;background:rgba(24,7,13,.58)!important;backdrop-filter:blur(10px)}
+.v311-media-modal{width:min(720px,96vw)!important;max-height:min(92vh,900px);overflow:auto;padding:24px!important;border-radius:26px!important;background:linear-gradient(155deg,rgba(255,255,255,.96),rgba(255,246,249,.94))!important;box-shadow:0 28px 90px rgba(42,7,19,.34)!important;border:1px solid rgba(255,255,255,.72)!important}
+.v311-media-modal-head{padding-right:36px;margin-bottom:16px}.v311-media-modal-head h2{font-family:"Aptos Display","Segoe UI Variable Display","Segoe UI",sans-serif;font-size:28px;line-height:1.05;margin:9px 0 7px;color:#2d131d}.v311-media-modal-head p{margin:0;color:#816b74;font-size:13px;line-height:1.5}
+.v311-media-viewport{position:relative;margin:0 auto;overflow:hidden;background:#12070b;box-shadow:0 16px 46px rgba(55,10,27,.22);touch-action:none;overscroll-behavior:contain;cursor:grab;user-select:none;isolation:isolate}
+.v311-media-viewport.dragging{cursor:grabbing}
+.v311-media-viewport.avatar-mode{width:min(430px,78vw);aspect-ratio:1/1;border-radius:50%;box-shadow:0 0 0 5px rgba(255,255,255,.96),0 0 0 7px rgba(176,42,86,.24),0 20px 54px rgba(55,10,27,.25)}
+.v311-media-viewport.cover-mode{width:100%;aspect-ratio:16/7;border-radius:20px}
+.v311-media-viewport>img{position:absolute;max-width:none!important;max-height:none!important;pointer-events:none!important;user-select:none!important;-webkit-user-drag:none!important;will-change:left,top,width,height}
+.v311-media-viewport.avatar-mode .v311-crop-mask{position:absolute;inset:0;border-radius:50%;box-shadow:inset 0 0 0 2px rgba(255,255,255,.9),inset 0 0 0 4px rgba(166,50,85,.12);pointer-events:none;z-index:3}
+.v311-media-viewport.cover-mode .v311-crop-mask{position:absolute;inset:0;border-radius:20px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.6);background:linear-gradient(90deg,transparent 33.2%,rgba(255,255,255,.18) 33.3%,rgba(255,255,255,.18) 33.5%,transparent 33.6%,transparent 66.4%,rgba(255,255,255,.18) 66.5%,rgba(255,255,255,.18) 66.7%,transparent 66.8%),linear-gradient(180deg,transparent 49.8%,rgba(255,255,255,.18) 49.9%,rgba(255,255,255,.18) 50.1%,transparent 50.2%);pointer-events:none;z-index:3}
+.v311-crop-result-hint{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:4;padding:7px 11px;border-radius:999px;background:rgba(22,7,12,.68);color:#fff;font-size:10px;font-weight:750;white-space:nowrap;backdrop-filter:blur(9px);pointer-events:none}
+.v311-media-loader{position:absolute;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;gap:10px;background:rgba(24,7,13,.72);color:#fff;font-weight:800;backdrop-filter:blur(8px)}
+.v311-media-loader i{width:22px;height:22px;border:3px solid rgba(255,255,255,.28);border-top-color:#fff;border-radius:50%;animation:v311Spin .8s linear infinite}@keyframes v311Spin{to{transform:rotate(360deg)}}
+.v311-media-controls{margin-top:20px;padding:14px 16px;border:1px solid rgba(166,50,85,.12);border-radius:18px;background:rgba(249,232,239,.58)}
+.v311-media-controls label{display:grid;grid-template-columns:92px minmax(0,1fr) 54px;align-items:center;gap:12px;font-size:12px;font-weight:800;color:#351721}.v311-media-controls input[type=range]{width:100%;accent-color:#a63255}.v311-media-controls b{text-align:right;color:#a63255}.v311-media-controls small{display:block;margin-top:9px;color:#8b737d;font-size:10px}
+.v311-media-modal-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:13px}.v311-media-modal-actions .danger-text{margin-left:auto}.v311-media-save-row{margin-top:18px}
+
+/* V3.11 global avatars are final cropped pixels; the frame never changes size. */
+.v37-member-avatar .v310-avatar-frame{overflow:hidden!important}
+.v37-member-avatar .v310-avatar-frame>img[data-v311-final="1"]{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;object-fit:cover!important;object-position:center!important;transform:none!important}
+.user-avatar img.v311-final-avatar,.profile-avatar-large.v311-final-avatar{object-fit:cover!important;object-position:center!important;transform:none!important}
+
+@media(max-width:760px){
+  .cover-camera{right:12px;top:12px}.avatar-camera{width:32px;height:32px;right:0;bottom:0}
+  .profile-camera-button{opacity:1}
+  .v311-media-modal-backdrop{padding:10px!important;align-items:flex-end!important}
+  .v311-media-modal{width:100%!important;max-height:94dvh;border-radius:24px 24px 16px 16px!important;padding:18px!important}
+  .v311-media-modal-head h2{font-size:23px}.v311-media-viewport.avatar-mode{width:min(82vw,360px)}
+  .v311-media-controls label{grid-template-columns:72px minmax(0,1fr) 46px;gap:8px}
+  .v311-media-modal-actions{display:grid;grid-template-columns:1fr 1fr}.v311-media-modal-actions>*{width:100%!important;justify-content:center!important;margin:0!important}.v311-media-modal-actions .danger-text{grid-column:1/-1}
+}
