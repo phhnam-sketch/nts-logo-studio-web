@@ -314,6 +314,17 @@
     Promise.resolve().then(job).catch(error => console.warn(label || "profile background task", error));
   }
 
+  async function syncMyPublicProfileBestEffort() {
+    try {
+      const result = await client()?.rpc?.("sync_my_public_profile_v3131");
+      if (result?.error) console.warn("public profile self-heal", result.error);
+      return result?.data || null;
+    } catch (error) {
+      console.warn("public profile self-heal", error);
+      return null;
+    }
+  }
+
   async function cleanupOldVersionedMedia(kind, keepPath, keep = 3) {
     if (!state.user || !client()?.storage) return;
     const folder = `${state.user.id}/${kind}`;
@@ -415,6 +426,7 @@
     state.saving = true;
     const previousRuntime = state.runtimeUrls[kind];
     const optimisticUrl = URL.createObjectURL(cropBlob);
+    let primary = null;
     state.runtimeUrls[kind] = optimisticUrl;
     render();
     try {
@@ -422,7 +434,7 @@
 
       // Critical path is intentionally tiny: upload FINAL cropped pixels to a UNIQUE URL,
       // update DB, render. Source/canonical/auth metadata sync continue in background.
-      const primary = await uploadImmutableBlob(kind, cropBlob);
+      primary = await uploadImmutableBlob(kind, cropBlob);
       const prefix = kind === "avatar" ? "avatar" : "cover";
       const payload = {
         [`${prefix}_url`]: primary.url,
@@ -437,6 +449,7 @@
       if (error) throw error;
 
       state.profile = { ...defaults(), ...data };
+      runInBackground(syncMyPublicProfileBestEffort, "public avatar projection self-heal");
       if (previousRuntime && previousRuntime !== optimisticUrl && /^blob:/i.test(previousRuntime)) {
         try { URL.revokeObjectURL(previousRuntime); } catch (_) {}
       }
@@ -481,12 +494,20 @@
       }, `${kind} immutable URL verification`);
       return state.profile;
     } catch (error) {
+      if (primary?.path) {
+        runInBackground(async () => {
+          try { await client().storage.from("profile-media").remove([primary.path]); } catch (_) {}
+        }, `${kind} orphan upload cleanup`);
+      }
       if (state.runtimeUrls[kind] === optimisticUrl) {
         try { URL.revokeObjectURL(optimisticUrl); } catch (_) {}
         state.runtimeUrls[kind] = previousRuntime || null;
         render();
       }
       const message = String(error?.message || error);
+      if (/record .*new.* has no field .*user_id/i.test(message)) {
+        throw new Error("Database đang dùng trigger V3.13 lỗi. Hãy chạy Migration 013 V3.13.1 rồi lưu ảnh lại.");
+      }
       if (/row-level security|policy|bucket|mime/i.test(message)) {
         throw new Error("Supabase Storage đang chặn ảnh hồ sơ. Kiểm tra bucket profile-media và policy upload/update của chính người dùng.");
       }
@@ -561,6 +582,7 @@
       if (error) throw error;
       if (!data) throw new Error("Không nhận được hồ sơ sau khi lưu. Hãy kiểm tra RLS của bảng profiles.");
       state.profile = { ...defaults(), ...data };
+      runInBackground(syncMyPublicProfileBestEffort, "public profile projection self-heal");
       render(); // immediate: local normalized blob is already visible here.
 
       runInBackground(async () => {

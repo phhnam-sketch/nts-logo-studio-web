@@ -186,7 +186,7 @@
   async function loadDirectory(search = "") {
     if (!state.user || !client()) return;
     try {
-      const { data, error } = await rpcCascade(["list_member_directory_v313","list_member_directory_v312","list_member_directory_v311","list_member_directory_v310"], { p_search: search.trim(), p_limit: 60 });
+      const { data, error } = await rpcCascade(["list_member_directory_v3131","list_member_directory_v313","list_member_directory_v312","list_member_directory_v311","list_member_directory_v310"], { p_search: search.trim(), p_limit: 60 });
       if (error) throw error;
       state.directory = Array.isArray(data) ? data : [];
       renderDirectory();
@@ -201,7 +201,7 @@
   async function loadMessengerContacts({ silent = false } = {}) {
     if (!state.user || !client()) return;
     try {
-      const { data, error } = await rpcCascade(["list_messenger_contacts_v313","list_messenger_contacts_v312","list_messenger_contacts_v311","list_messenger_contacts_v310"], { p_limit: 60 });
+      const { data, error } = await rpcCascade(["list_messenger_contacts_v3131","list_messenger_contacts_v313","list_messenger_contacts_v312","list_messenger_contacts_v311","list_messenger_contacts_v310"], { p_limit: 60 });
       if (error) throw error;
       state.messengerContacts = Array.isArray(data) ? data : [];
       state.unread = state.messengerContacts.reduce((sum, x) => sum + Number(x.unread_count || 0), 0);
@@ -355,7 +355,7 @@
   async function getMemberPublic(id) {
     const found = findMember(id); if (found) return found;
     try {
-      const { data, error } = await rpcCascade(["get_member_public_profile_v313","get_member_public_profile_v312","get_member_public_profile_v311","get_member_public_profile_v310"], { p_user: id });
+      const { data, error } = await rpcCascade(["get_member_public_profile_v3131","get_member_public_profile_v313","get_member_public_profile_v312","get_member_public_profile_v311","get_member_public_profile_v310"], { p_user: id });
       if (error) throw error;
       const row = Array.isArray(data) ? data[0] : data;
       return row ? normalizeContact({ ...row, peer_id: row.user_id }) : null;
