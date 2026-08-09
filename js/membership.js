@@ -190,6 +190,7 @@
   }
 
   function openPage(pageId) {
+    if (pageId === "vipPage" && state.account?.role === "admin") pageId = "adminPage";
     document.querySelectorAll(".app-page").forEach(p => p.classList.toggle("hidden", p.id !== pageId));
     document.querySelectorAll("[data-page]").forEach(b => b.classList.toggle("active", b.dataset.page === pageId));
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -197,6 +198,7 @@
     else stopPaymentPolling();
     if (pageId === "adminPage") NTS.admin?.refresh?.();
     if (pageId === "profilePage") NTS.profile?.refresh?.();
+    window.dispatchEvent(new CustomEvent("nts:page-changed", { detail: { pageId } }));
   }
   document.addEventListener("click", event => {
     const nav = event.target.closest("[data-page]");

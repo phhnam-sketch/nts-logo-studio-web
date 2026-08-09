@@ -27,7 +27,7 @@
 
       <div class="brand-hero">
         <span id="loginHeroEyebrow" class="eyebrow">NTS UI</span>
-        <h1 id="loginHeroTitle">NAM TIÊN SINH</h1>
+        <h1 id="loginHeroTitle">NHÌN SANG PHẢI</h1>
         <p id="loginHeroSubtitle">Đăng nhập để quản lý phiên làm việc, sử dụng giao diện tối ưu cho desktop, tablet và mobile.</p>
       </div>
 
@@ -61,7 +61,7 @@
     <section class="auth-form-panel">
       <div class="auth-card">
         <div class="auth-heading">
-          <span class="auth-badge">NTS LOGIN</span>
+          <span class="auth-badge">NTS CLOUD</span>
           <h2 id="authTitle">Chào mừng trở lại</h2>
           <p id="authSubtitle">Đăng nhập để tiếp tục vào Logo Studio.</p>
         </div>
@@ -138,13 +138,14 @@
         <img class="brand-logo-image small" src="assets/brand/logo.png" alt="NTS" />
         <div class="app-brand-text">
           <strong>LOGO STUDIO PRO</strong>
-          <span>WEB V3.6</span>
+          <span>WEB V3.7</span>
         </div>
       </div>
 
       <nav class="app-nav" aria-label="Điều hướng chính">
         <button class="app-nav-button active" type="button" data-page="studioPage">Studio</button>
         <button class="app-nav-button" type="button" data-page="profilePage">Tài khoản</button>
+        <button class="app-nav-button" type="button" data-page="communityPage">Cộng đồng</button>
         <button class="app-nav-button vip-nav" type="button" data-page="vipPage">VIP</button>
         <button id="adminNavButton" class="app-nav-button hidden" type="button" data-page="adminPage">Quản trị</button>
       </nav>
@@ -172,7 +173,8 @@
             <span id="menuEmail">email@example.com</span>
           </div>
           <button class="menu-button" type="button" data-page="profilePage">Hồ sơ cá nhân</button>
-          <button class="menu-button" type="button" data-page="vipPage">Nâng cấp VIP</button>
+          <button class="menu-button" type="button" data-page="communityPage">Bạn bè & Tin nhắn</button>
+          <button class="menu-button vip-menu-item" type="button" data-page="vipPage">Nâng cấp VIP</button>
           <button id="adminQuickMenu" class="menu-button hidden" type="button" data-page="adminPage">Trang quản trị</button>
           <button id="logoutButton" class="menu-danger" type="button">Đăng xuất</button>
         </div>
@@ -392,7 +394,7 @@
               <button id="applySelectedButton" class="secondary-button" type="button">Áp dụng ảnh đã chọn</button>
               <button id="applyAllButton" class="secondary-button" type="button">Áp dụng tất cả</button>
             </div>
-            <div class="smart-apply-note"><strong>SMART APPLY 3.3</strong><span></span></div>
+            <div class="smart-apply-note"><strong>SMART APPLY 3.3</strong><span>Lề ngang scale theo chiều rộng, lề dọc scale theo chiều cao; Dịch X/Y cũng scale theo đúng trục. Ảnh ngang và ảnh dọc vì vậy giữ bố cục tương đối ổn định mà vẫn cho tinh chỉnh độc lập từng lề.</span></div>
           </section>
 
           <section class="setting-section export-section">
@@ -402,7 +404,7 @@
             </div>
             <div class="export-performance-card">
               <div class="export-performance-head">
-                <div><strong>Engine xuất V3.3</strong><small></small></div>
+                <div><strong>Engine xuất V3.3</strong><small>Turbo dùng Web Worker song song trên PC; không phụ thuộc requestAnimationFrame nên đổi tab không còn làm batch đứng ở điểm yield.</small></div>
                 <span id="exportEngineStatus" class="engine-badge" data-kind="turbo">TURBO</span>
               </div>
               <label class="export-mode-field" for="exportSpeedMode">
@@ -429,7 +431,7 @@
               <div class="batch-progress-track"><span id="batchProgressBar"></span></div>
               <div id="batchProgressText" class="batch-progress-text">Sẵn sàng xuất.</div>
             </div>
-            <p class="section-note"></p>
+            <p class="section-note">PC: Turbo Worker xử lý song song và tiếp tục khi bạn chuyển sang tab khác trong điều kiện trình duyệt chưa đóng băng trang. Chrome/Edge có thể ghi trực tiếp vào thư mục. Mobile: app ưu tiên bảng Chia sẻ để lưu vào Photos/Gallery.</p>
             <div id="mobileExportHint" class="mobile-export-hint hidden"></div>
           </section>
         </div>
@@ -443,7 +445,7 @@
       <div class="page-container v36-page-shell">
         <div class="v36-page-heading">
           <div><span class="v36-kicker">TÀI KHOẢN</span><h1>Hồ sơ cá nhân</h1><p>Thông tin, hình ảnh và trạng thái hội viên của bạn được đồng bộ an toàn.</p></div>
-          <button id="saveProfileButtonTop" class="primary-button v36-save-profile" type="button">Lưu thay đổi</button>
+          <div class="v37-profile-heading-actions"><button id="editProfileButton" class="primary-button" type="button">Chỉnh sửa hồ sơ</button><button id="saveProfileButtonTop" class="primary-button v36-save-profile hidden" type="button">Lưu thay đổi</button></div>
         </div>
 
         <div class="profile-hero-card v36-profile-hero">
@@ -455,9 +457,17 @@
           </div>
         </div>
 
-        <div class="account-grid v36-account-grid">
-          <form id="profileForm" class="content-card profile-form-card v36-glass-card">
-            <div class="card-heading"><div><span class="eyebrow">THÔNG TIN</span><h2>Thông tin cá nhân</h2><p>Ảnh chỉ mở trình chỉnh sửa sau khi bạn có ảnh thật hoặc vừa chọn file mới.</p></div><button id="saveProfileButton" class="primary-button compact" type="submit">Lưu thay đổi</button></div>
+        <div class="v37-profile-overview">
+          <article class="v37-profile-about">
+            <span class="v37-overview-label">GIỚI THIỆU</span>
+            <p id="profileBioSummary">Chưa có giới thiệu. Bấm “Chỉnh sửa hồ sơ” để bổ sung thông tin.</p>
+          </article>
+          <div class="v37-profile-overview-note"><span>Ảnh bìa · Ảnh đại diện · Gói hội viên</span><small>Chỉ mở công cụ chỉnh sửa khi bạn chủ động bấm Chỉnh sửa.</small></div>
+        </div>
+
+        <div id="profileEditArea" class="account-grid v36-account-grid v37-profile-edit-area">
+          <form id="profileForm" class="content-card profile-form-card v36-glass-card v37-profile-edit-panel hidden">
+            <div class="card-heading v37-profile-editor-heading"><div><span class="eyebrow">CHỈNH SỬA</span><h2>Thông tin cá nhân</h2><p>Chọn ảnh mới để mở trình căn vị trí. Ảnh hiện tại vẫn giữ nguyên nếu bạn không thay đổi.</p></div><div class="v37-editor-actions"><button id="cancelProfileEditButton" class="secondary-button compact" type="button">Hủy</button><button id="saveProfileButton" class="primary-button compact" type="submit">Lưu thay đổi</button></div></div>
 
             <div class="media-upload-grid profile-media-editor-grid v36-profile-media-grid">
               <section id="avatarMediaEditor" class="media-upload-card enhanced-media-card profile-media-editor v36-media-card" data-media-kind="avatar">
@@ -505,7 +515,7 @@
             <div class="field"><div class="field-label-row"><label for="profileBio">Bio</label><span class="muted">Tối đa 500 ký tự</span></div><textarea id="profileBio" maxlength="500" rows="5" placeholder="Giới thiệu ngắn về bạn..."></textarea></div>
           </form>
 
-          <aside class="content-card account-status-card v36-glass-card v36-sticky-card">
+          <aside id="profileMembershipCard" class="content-card account-status-card v36-glass-card v36-sticky-card v37-membership-summary-card">
             <span class="eyebrow">HỘI VIÊN</span><h2>Gói hiện tại</h2>
             <div class="v36-plan-summary"><span id="v36ProfilePlanIcon">◇</span><div><strong id="v36ProfilePlanName">FREE</strong><small id="v36ProfilePlanSub">10 ảnh mỗi tháng</small></div></div>
             <div class="quota-meter"><div><span>Đã dùng tháng này</span><strong><span id="quotaUsed">0</span> / <span id="quotaLimit">10</span></strong></div><div class="quota-track"><span id="profileQuotaBar"></span></div></div>
@@ -515,6 +525,70 @@
         </div>
       </div>
     </section>
+
+    <section id="communityPage" class="app-page community-page hidden">
+      <div class="page-container v37-community-shell">
+        <div class="v37-page-title-row">
+          <div><span class="v37-kicker">NTS COMMUNITY</span><h1>Kết nối hội viên</h1><p>Kết bạn, nhắn tin trực tiếp và gửi phản hồi cho quản trị viên mà không ảnh hưởng engine xử lý ảnh.</p></div>
+          <div class="v37-community-status"><span class="status-dot"></span><strong>Realtime</strong><small>Chỉ kết nối khi bạn mở Cộng đồng</small></div>
+        </div>
+
+        <div class="v37-community-tabs" role="tablist">
+          <button class="v37-community-tab active" type="button" data-community-tab="people">Hội viên</button>
+          <button class="v37-community-tab" type="button" data-community-tab="chat">Tin nhắn <span id="communityUnreadBadge" class="v37-tab-badge hidden">0</span></button>
+          <button class="v37-community-tab" type="button" data-community-tab="feedback">Phản hồi</button>
+        </div>
+
+        <section id="communityPeoplePanel" class="v37-community-panel">
+          <div class="v37-community-grid">
+            <aside class="v37-community-side">
+              <div class="v37-glass-card v37-search-members-card">
+                <div class="v37-card-head"><div><span class="v37-kicker">DANH BẠ</span><h2>Tìm hội viên</h2></div><span id="communityMemberCount" class="count-chip">0</span></div>
+                <div class="search-shell"><span>⌕</span><input id="communityMemberSearch" type="search" placeholder="Tìm theo tên..." autocomplete="off" /></div>
+                <p class="v37-card-note">Badge trên avatar cho biết ADMIN / VIP / FREE. Email không được công khai.</p>
+              </div>
+              <div class="v37-glass-card">
+                <div class="v37-card-head"><div><span class="v37-kicker">YÊU CẦU</span><h2>Lời mời kết bạn</h2></div></div>
+                <div id="friendRequestsList" class="v37-mini-list"><div class="v37-empty-state">Chưa có lời mời.</div></div>
+              </div>
+            </aside>
+            <div class="v37-glass-card v37-member-directory-card">
+              <div id="communityMemberList" class="v37-member-directory"><div class="v37-empty-state">Đang tải danh sách hội viên...</div></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="communityChatPanel" class="v37-community-panel hidden">
+          <div class="v37-chat-layout">
+            <aside class="v37-glass-card v37-chat-contacts">
+              <div class="v37-card-head"><div><span class="v37-kicker">BẠN BÈ</span><h2>Cuộc trò chuyện</h2></div></div>
+              <div id="chatContactList" class="v37-chat-contact-list"><div class="v37-empty-state">Kết bạn với hội viên để bắt đầu nhắn tin.</div></div>
+            </aside>
+            <section class="v37-glass-card v37-chat-room">
+              <header id="chatRoomHeader" class="v37-chat-room-head"><div class="v37-chat-placeholder-title"><strong>Chọn một người bạn</strong><span>Tin nhắn chỉ hiển thị giữa hai tài khoản.</span></div></header>
+              <div id="chatMessages" class="v37-chat-messages"><div class="v37-chat-empty">Chọn một hội viên ở bên trái để trò chuyện.</div></div>
+              <form id="chatComposer" class="v37-chat-composer">
+                <textarea id="chatMessageInput" rows="1" maxlength="2000" placeholder="Nhập tin nhắn..." disabled></textarea>
+                <button id="sendChatMessage" class="primary-button" type="submit" disabled>Gửi</button>
+              </form>
+            </section>
+          </div>
+        </section>
+
+        <section id="communityFeedbackPanel" class="v37-community-panel hidden">
+          <div class="v37-feedback-layout">
+            <form id="feedbackForm" class="v37-glass-card v37-feedback-form">
+              <div class="v37-card-head"><div><span class="v37-kicker">PHẢN HỒI</span><h2>Góp ý cho NTS Logo Studio</h2><p>Admin sẽ thấy phản hồi này trong Trung tâm quản trị.</p></div></div>
+              <div class="form-grid two-col"><div class="field"><label for="feedbackType">Loại phản hồi</label><select id="feedbackType"><option value="comment">Bình luận</option><option value="suggestion">Đề xuất</option><option value="bug">Báo lỗi</option><option value="other">Khác</option></select></div><div class="field"><label for="feedbackRating">Đánh giá</label><select id="feedbackRating"><option value="">Không chấm điểm</option><option value="5">5 - Rất tốt</option><option value="4">4 - Tốt</option><option value="3">3 - Bình thường</option><option value="2">2 - Chưa tốt</option><option value="1">1 - Kém</option></select></div></div>
+              <div class="field"><label for="feedbackContent">Nội dung</label><textarea id="feedbackContent" rows="7" maxlength="3000" placeholder="Điều gì đang tốt, điều gì cần sửa hoặc tính năng bạn muốn có?" required></textarea></div>
+              <div class="v37-form-footer"><span id="feedbackCharCount">0 / 3000</span><button id="submitFeedbackButton" class="primary-button" type="submit">Gửi phản hồi</button></div>
+            </form>
+            <div class="v37-glass-card v37-feedback-history-card"><div class="v37-card-head"><div><span class="v37-kicker">LỊCH SỬ</span><h2>Phản hồi của bạn</h2></div><button id="refreshFeedbackButton" class="secondary-button compact" type="button">↻</button></div><div id="myFeedbackList" class="v37-feedback-list"><div class="v37-empty-state">Chưa có phản hồi.</div></div></div>
+          </div>
+        </section>
+      </div>
+    </section>
+
     <section id="vipPage" class="app-page membership-page hidden">
       <div class="page-container v36-page-shell v36-membership-shell">
         <div class="membership-hero premium-membership-hero v36-membership-hero">
@@ -564,12 +638,35 @@
     </section>
     <section id="adminPage" class="app-page admin-page hidden">
       <div class="page-container admin-container">
-        <div class="admin-header"><div><span class="auth-badge">ADMIN CONTROL</span><h1>Trung tâm quản trị</h1><p>Quản lý hội viên, gói VIP, quota và duyệt thanh toán.</p></div><button id="refreshAdminButton" class="secondary-button" type="button">↻ Làm mới</button></div>
+        <div class="admin-header"><div><span class="auth-badge">ADMIN CONTROL</span><h1>Trung tâm quản trị</h1><p>Quản lý hội viên, thanh toán, phản hồi cộng đồng, lịch sử gói và chế độ bảo trì.</p></div><button id="refreshAdminButton" class="secondary-button" type="button">↻ Làm mới</button></div>
         <div class="admin-stats-grid"><article><span>Tổng hội viên</span><strong id="statTotalUsers">0</strong></article><article><span>VIP</span><strong id="statVipUsers">0</strong></article><article><span>Free</span><strong id="statFreeUsers">0</strong></article><article><span>Chờ thanh toán</span><strong id="statPendingPayments">0</strong></article><article><span>Tạm khóa</span><strong id="statSuspended">0</strong></article><article><span>Doanh thu duyệt tháng</span><strong id="statRevenue">0 ₫</strong></article></div>
 
         <div class="content-card admin-section"><div class="admin-section-head admin-member-head"><div><span class="eyebrow">HỘI VIÊN</span><h2>Quản lý tài khoản</h2><p>Thêm, chỉnh sửa, khóa, reset quota hoặc xóa tài khoản từ một nơi.</p></div><div class="admin-member-tools"><div class="search-shell admin-search"><span>⌕</span><input id="adminMemberSearch" type="search" placeholder="Tìm email hoặc tên..." /></div><button id="createMemberButton" class="primary-button compact" type="button">＋ Thêm hội viên</button></div></div><div class="table-scroll desktop-member-table"><table class="admin-table"><thead><tr><th>Hội viên</th><th>Gói</th><th>Trạng thái</th><th>Đã dùng</th><th>Quota riêng</th><th>VIP đến</th><th>Ngày tạo</th><th></th></tr></thead><tbody id="adminMembersBody"><tr><td colspan="8" class="table-empty">Đang tải...</td></tr></tbody></table></div><div id="adminMembersMobile" class="admin-members-mobile"><div class="empty-admin-card">Đang tải...</div></div></div>
 
         <div class="content-card admin-section"><div class="admin-section-head"><div><span class="eyebrow">THANH TOÁN</span><h2>Thanh toán & đối soát</h2></div><select id="adminPaymentFilter"><option value="pending">Chờ duyệt</option><option value="approved">Đã duyệt</option><option value="rejected">Từ chối</option><option value="all">Tất cả</option></select></div><div id="adminPaymentsList" class="admin-payments-list"><div class="empty-admin-card">Đang tải...</div></div></div>
+
+
+        <div class="v37-admin-control-grid">
+          <section class="content-card admin-section v37-maintenance-card">
+            <div class="admin-section-head"><div><span class="eyebrow">BẢO TRÌ</span><h2>Chế độ bảo trì website</h2><p>Khi bật, hội viên không thể vào ứng dụng; quản trị viên vẫn truy cập để sửa chữa.</p></div><label class="v37-switch"><input id="maintenanceEnabled" type="checkbox"><span></span></label></div>
+            <div class="form-grid two-col"><div class="field"><label for="maintenanceTitle">Tiêu đề</label><input id="maintenanceTitle" maxlength="120" value="Hệ thống đang bảo trì" /></div><div class="field"><label for="maintenanceMessage">Thông báo</label><input id="maintenanceMessage" maxlength="500" value="NTS Logo Studio đang được nâng cấp. Vui lòng quay lại sau." /></div></div>
+            <div class="v37-maintenance-actions"><span id="maintenanceStateLabel" class="v37-state-pill">Đang tắt</span><button id="saveMaintenanceButton" class="primary-button compact" type="button">Lưu trạng thái bảo trì</button></div>
+          </section>
+          <section class="content-card admin-section v37-community-stats-card">
+            <div class="admin-section-head"><div><span class="eyebrow">CỘNG ĐỒNG</span><h2>Tổng quan kết nối</h2><p>Chỉ xem số liệu tổng hợp; nội dung tin nhắn riêng tư không hiển thị cho admin.</p></div><button id="refreshCommunityAdmin" class="secondary-button compact" type="button">↻</button></div>
+            <div class="v37-admin-mini-stats"><article><span>Bạn bè</span><strong id="adminFriendshipStat">0</strong></article><article><span>Tin nhắn</span><strong id="adminMessageStat">0</strong></article><article><span>Phản hồi mới</span><strong id="adminFeedbackNewStat">0</strong></article><article><span>Tổng phản hồi</span><strong id="adminFeedbackTotalStat">0</strong></article></div>
+          </section>
+        </div>
+
+        <div class="content-card admin-section">
+          <div class="admin-section-head"><div><span class="eyebrow">PHẢN HỒI & BÌNH LUẬN</span><h2>Quản lý phản hồi người dùng</h2><p>Admin có thể thêm ghi chú, sửa nội dung/trạng thái, ghi chú quản trị hoặc xóa mềm phản hồi.</p></div><div class="v37-admin-feedback-toolbar"><select id="adminFeedbackFilter"><option value="new">Mới</option><option value="reviewing">Đang xem</option><option value="planned">Đã lên kế hoạch</option><option value="resolved">Đã xử lý</option><option value="all">Tất cả</option></select><button id="adminAddFeedbackNote" class="primary-button compact" type="button">＋ Thêm ghi chú</button></div></div>
+          <div id="adminFeedbackList" class="v37-admin-feedback-list"><div class="empty-admin-card">Đang tải...</div></div>
+        </div>
+
+        <div class="content-card admin-section">
+          <div class="admin-section-head"><div><span class="eyebrow">LỊCH SỬ ĐĂNG KÝ</span><h2>Biến động quyền & gói hội viên</h2><p>Ghi lại Free/VIP/Admin, khóa/mở tài khoản và hạn VIP. Xóa trong giao diện là lưu trữ mềm.</p></div><button id="refreshMembershipHistory" class="secondary-button compact" type="button">↻ Làm mới</button></div>
+          <div id="adminMembershipHistory" class="v37-history-list"><div class="empty-admin-card">Đang tải...</div></div>
+        </div>
 
         <form id="adminSettingsForm" class="content-card admin-section service-settings-card">
           <div class="admin-section-head service-settings-head"><div><span class="eyebrow">DỊCH VỤ & THANH TOÁN</span><h2>Trung tâm cấu hình thương mại</h2><p>Quản lý quota, giá VIP và thông tin nhận tiền. Thay đổi được phản ánh ngay trên trang VIP.</p></div><div class="settings-save-wrap"><span id="adminSettingsDirty" class="settings-dirty">Đã đồng bộ</span><button id="saveAdminSettings" class="primary-button compact" type="submit">Lưu thay đổi</button></div></div>
@@ -587,6 +684,11 @@
         </form>
       </div>
     </section>
+
+
+    <div id="maintenanceOverlay" class="v37-maintenance-overlay hidden" aria-live="assertive">
+      <div class="v37-maintenance-modal"><div class="v37-maintenance-orbit"></div><img src="assets/brand/logo.png" alt="NTS" /><span>MAINTENANCE MODE</span><h2 id="maintenanceOverlayTitle">Hệ thống đang bảo trì</h2><p id="maintenanceOverlayMessage">NTS Logo Studio đang được nâng cấp. Vui lòng quay lại sau.</p><button id="maintenanceLogoutButton" class="secondary-button" type="button">Đăng xuất</button></div>
+    </div>
 
     <div id="suspendedOverlay" class="suspended-overlay hidden"><div><span>!</span><h2>Tài khoản tạm bị khóa</h2><p>Quản trị viên đã tạm ngưng quyền sử dụng Logo Studio. Hãy liên hệ hỗ trợ.</p><button id="suspendedLogout" class="secondary-button" type="button">Đăng xuất</button></div></div>
   </main>
@@ -659,9 +761,13 @@
   <script src="js/membership.js"></script>
   <script src="js/profile.js"></script>
   <script src="js/admin.js"></script>
+  <script src="js/community.js"></script>
+  <script src="js/admin-community.js"></script>
+  <script src="js/maintenance.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <script src="js/ui-v36.js"></script>
+  <script src="js/ui-v37.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

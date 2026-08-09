@@ -129,6 +129,7 @@
     if ($("profileEmail")) $("profileEmail").value = state.user?.email || "";
     if ($("profileNameHero")) $("profileNameHero").textContent = p.display_name || "Người dùng";
     if ($("profileEmailHero")) $("profileEmailHero").textContent = state.user?.email || "";
+    if ($("profileBioSummary")) $("profileBioSummary").textContent = p.bio?.trim() || "Chưa có giới thiệu. Bấm “Chỉnh sửa hồ sơ” để bổ sung thông tin.";
 
     const avatar = effectiveMedia("avatar");
     const cover = effectiveMedia("cover");
@@ -339,6 +340,7 @@
       mediaStatus("Đã lưu. Ảnh đang đồng bộ nền nhưng preview và vị trí đã được áp dụng ngay.", "ok");
       render();
       toast("Hồ sơ đã cập nhật", "Ảnh và vị trí hiển thị đã được lưu. Bạn có thể tiếp tục sử dụng app ngay.", "success");
+      window.dispatchEvent(new CustomEvent("nts:profile-saved", { detail: { profile: state.profile } }));
       Promise.allSettled([ensureVisibleMedia("avatar"), ensureVisibleMedia("cover")]).then(checks => {
         ["avatar", "cover"].forEach((kind, i) => {
           const ok = checks[i].status === "fulfilled" && checks[i].value === true;
