@@ -1584,3 +1584,144 @@ input[type="range"]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;b
   .v38-chat-window { border-radius:20px; height:min(505px,calc(100vh - 145px)); }
   .v38-incoming-stack { left:12px; right:12px; width:auto; }
 }
+
+
+/* ========================================================================== */
+/* V3.9 — Messenger polish / role glow / membership visual refresh            */
+/* ========================================================================== */
+:root{
+  --font-display:"Aptos Display","Aptos","Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+  --v39-gold:#f1c75b;
+  --v39-gold-deep:#c38a22;
+  --v39-pink:#f078ad;
+  --v39-pink-deep:#b52d62;
+}
+
+/* Typography refresh: no external font request, so there is no added network cost. */
+.v36-membership-hero h1,
+.v36-section-heading h2,
+.v36-plan-card h3,
+.v37-page-title-row h1,
+.v38-messenger-panel > header strong,
+.v38-chat-window-peer strong{
+  font-family:var(--font-display);
+}
+
+/* Presence dot no longer sits on top of ADMIN/VIP/FREE badges. */
+.v37-member-avatar .v38-online-dot{
+  top:-2px!important;
+  right:-2px!important;
+  bottom:auto!important;
+  width:12px;
+  height:12px;
+  border:2.5px solid #fff;
+  z-index:8;
+}
+.v37-member-avatar.compact .v38-online-dot{width:10px;height:10px;top:-1px;right:-1px}
+.v37-role-dot{z-index:7!important;right:-5px!important;bottom:-5px!important}
+
+/* Role / plan visual identity. Free intentionally stays neutral. */
+.v37-member-avatar.v39-avatar-role-admin img{
+  border:2px solid #ef7fb0!important;
+  box-shadow:0 0 0 3px rgba(239,127,176,.15),0 0 17px rgba(222,65,130,.48),0 8px 18px rgba(97,21,55,.16);
+}
+.v37-member-avatar.v39-avatar-role-vip img{
+  border:2px solid #efc85f!important;
+  box-shadow:0 0 0 3px rgba(239,200,95,.16),0 0 18px rgba(224,174,55,.43),0 8px 18px rgba(111,73,19,.13);
+}
+.v37-member-avatar.v39-avatar-role-free img{
+  border:1px solid rgba(111,26,55,.11)!important;
+  box-shadow:none!important;
+}
+
+/* Mini avatar in the global top bar uses the same language. */
+.user-chip.v39-user-admin .user-avatar{
+  border:2px solid #ef7fb0;
+  box-shadow:0 0 0 3px rgba(239,127,176,.14),0 0 18px rgba(226,66,132,.46);
+}
+.user-chip.v39-user-vip .user-avatar{
+  border:2px solid #efc85f;
+  box-shadow:0 0 0 3px rgba(239,200,95,.14),0 0 18px rgba(224,174,55,.40);
+}
+.user-chip.v39-user-free .user-avatar{border:0;box-shadow:none}
+
+/* Messenger message actions */
+.v37-message,.v38-float-message{position:relative}
+.v39-message-actions{position:absolute;top:50%;transform:translateY(-50%);z-index:12}
+.v37-message.mine .v39-message-actions,.v38-float-message.mine .v39-message-actions{left:-38px}
+.v37-message.theirs .v39-message-actions,.v38-float-message.theirs .v39-message-actions{right:-38px}
+.v39-message-actions summary{
+  list-style:none;width:30px;height:28px;border-radius:10px;display:grid;place-items:center;cursor:pointer;
+  color:#8e7480;background:rgba(255,255,255,.86);border:1px solid rgba(113,26,55,.10);box-shadow:0 6px 14px rgba(69,14,35,.07);
+  font-size:11px;letter-spacing:1px;opacity:.25;transition:.16s ease;
+}
+.v39-message-actions summary::-webkit-details-marker{display:none}
+.v37-message:hover .v39-message-actions summary,.v38-float-message:hover .v39-message-actions summary,.v39-message-actions[open] summary{opacity:1;transform:scale(1.04)}
+.v39-message-menu{
+  position:absolute;bottom:34px;right:0;width:126px;padding:5px;border-radius:13px;background:rgba(255,253,253,.98);
+  border:1px solid rgba(115,29,59,.12);box-shadow:0 16px 34px rgba(59,14,32,.17);backdrop-filter:blur(14px);
+}
+.v39-message-menu button{width:100%;border:0;background:transparent;border-radius:9px;padding:8px 9px;text-align:left;cursor:pointer;color:#4c2b37;font-size:10px;font-weight:750}
+.v39-message-menu button:hover{background:#f7e8ed}.v39-message-menu button.danger{color:#c23c50}.v39-message-menu button.danger:hover{background:#fdecef}
+.v39-message-edit-box{display:grid;gap:6px;min-width:190px}
+.v39-message-edit-box textarea{width:100%;resize:none;border:1px solid rgba(166,50,85,.22);border-radius:12px;padding:8px 10px;outline:none;background:#fff;color:#301a23;font:inherit;font-size:11px;line-height:1.4;box-shadow:0 0 0 3px rgba(166,50,85,.06)}
+.v39-message-edit-buttons{display:flex;justify-content:flex-end;gap:5px}.v39-message-edit-buttons button{border:0;border-radius:9px;padding:6px 9px;cursor:pointer;background:#f4e8ec;color:#6d3448;font-size:9px;font-weight:800}.v39-message-edit-buttons button.save{background:#a62f58;color:#fff}
+.v39-revoked-body{font-style:italic!important;background:transparent!important;color:#9c8690!important;border:1px dashed rgba(123,76,95,.22)!important;box-shadow:none!important}
+.v39-message-meta{white-space:nowrap}
+
+/* Membership hero: cleaner typography and a significantly stronger current-plan card. */
+.v36-membership-hero{
+  position:relative!important;
+  overflow:hidden!important;
+  background:
+    radial-gradient(circle at 80% 20%,rgba(255,193,218,.18),transparent 34%),
+    radial-gradient(circle at 7% 112%,rgba(245,195,103,.12),transparent 34%),
+    linear-gradient(122deg,#5d0f2a 0%,#7d1838 43%,#ad315d 100%)!important;
+  box-shadow:0 24px 64px rgba(70,13,35,.18)!important;
+}
+.v36-membership-hero:before{
+  content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(115deg,rgba(255,255,255,.06),transparent 34%,rgba(255,255,255,.025));
+}
+.v36-membership-hero>div:first-child{position:relative;z-index:2}
+.v36-membership-hero .eyebrow,.v36-membership-hero .auth-badge{box-shadow:0 8px 22px rgba(58,10,28,.14)}
+.v36-membership-hero h1{
+  font-family:var(--font-display)!important;font-weight:780!important;letter-spacing:-.045em!important;
+  line-height:.99!important;font-size:clamp(40px,4.1vw,62px)!important;max-width:770px!important;text-wrap:balance;
+  text-shadow:0 10px 34px rgba(39,4,17,.20);
+}
+.v36-membership-hero p{font-size:14px!important;line-height:1.72!important;color:rgba(255,240,246,.86)!important;max-width:720px!important}
+.v36-current-membership{
+  position:relative!important;z-index:3!important;min-width:270px!important;padding:18px 20px!important;border-radius:20px!important;
+  backdrop-filter:blur(18px) saturate(1.14);transform:translateZ(0);transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease;
+}
+.v36-current-membership:hover{transform:translateY(-3px)}
+.v36-current-membership small{font-size:9px!important;letter-spacing:.12em!important;text-transform:uppercase!important;font-weight:900!important}
+.v36-current-membership strong{font-family:var(--font-display)!important;font-size:27px!important;letter-spacing:-.025em!important;line-height:1!important;margin:5px 0 6px!important}
+.v36-current-membership span:not(.v36-live-dot){font-size:10px!important;line-height:1.4!important}
+.v36-current-membership.v39-current-vip{
+  border:1px solid rgba(255,218,118,.48)!important;
+  background:linear-gradient(145deg,rgba(91,40,24,.34),rgba(255,196,73,.16))!important;
+  box-shadow:0 18px 42px rgba(70,26,14,.24),inset 0 1px rgba(255,242,194,.20),0 0 0 1px rgba(255,210,91,.08)!important;
+}
+.v36-current-membership.v39-current-vip:before{
+  content:"VIP ACTIVE";position:absolute;right:14px;top:-10px;padding:5px 8px;border-radius:999px;
+  background:linear-gradient(135deg,#f4cd68,#c58a20);color:#552b0a;font-size:7px;font-weight:950;letter-spacing:.12em;box-shadow:0 7px 18px rgba(127,79,7,.26);
+}
+.v36-current-membership.v39-current-vip strong{color:#ffe29a!important;text-shadow:0 0 18px rgba(255,207,86,.30)}
+.v36-current-membership.v39-current-vip .v36-live-dot{background:#f3c953!important;box-shadow:0 0 0 6px rgba(243,201,83,.15),0 0 14px rgba(243,201,83,.55)!important}
+.v36-current-membership.v39-current-admin{
+  border:1px solid rgba(255,148,196,.44)!important;background:linear-gradient(145deg,rgba(104,16,56,.45),rgba(232,86,148,.18))!important;
+  box-shadow:0 18px 42px rgba(69,12,38,.24),inset 0 1px rgba(255,223,237,.18),0 0 24px rgba(232,86,148,.09)!important;
+}
+.v36-current-membership.v39-current-admin:before{content:"ADMIN";position:absolute;right:14px;top:-10px;padding:5px 8px;border-radius:999px;background:linear-gradient(135deg,#f493bd,#bd3b73);color:#fff;font-size:7px;font-weight:950;letter-spacing:.12em;box-shadow:0 7px 18px rgba(112,22,59,.26)}
+.v36-current-membership.v39-current-admin strong{color:#ffd9e9!important}
+.v36-current-membership.v39-current-free{border:1px solid rgba(255,255,255,.22)!important;background:rgba(255,255,255,.08)!important;box-shadow:0 15px 36px rgba(49,8,24,.14)!important}
+
+/* Plan cards also receive the refreshed display font and spacing. */
+.v36-plan-card{padding:22px!important;border-radius:24px!important}.v36-plan-card h3{font-family:var(--font-display);font-size:20px!important;font-weight:760}.v36-plan-price strong{font-family:var(--font-display);font-size:24px!important}.v36-plan-card>p{color:#755d67!important}.v36-plan-card li{line-height:1.48}
+
+@media(max-width:760px){
+  .v39-message-actions summary{opacity:.72}.v37-message.mine .v39-message-actions,.v38-float-message.mine .v39-message-actions{left:-34px}
+  .v36-membership-hero h1{font-size:clamp(34px,10.5vw,48px)!important;line-height:1.01!important}
+  .v36-current-membership{width:100%;min-width:0!important}.v36-current-membership.v39-current-vip:before,.v36-current-membership.v39-current-admin:before{right:12px}
+}

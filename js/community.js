@@ -86,7 +86,7 @@
   function memberAvatar(member, compact = false) {
     const id = peerId(member);
     const wrap = document.createElement("div");
-    wrap.className = `${compact ? "v37-member-avatar compact" : "v37-member-avatar"}${isOnline(id) ? " is-online" : ""}`;
+    wrap.className = `${compact ? "v37-member-avatar compact" : "v37-member-avatar"} v39-avatar-role-${roleClass(member)}${isOnline(id) ? " is-online" : ""}`;
     wrap.dataset.userId = id || "";
     const img = document.createElement("img");
     img.alt = member?.display_name ? `Ảnh đại diện ${member.display_name}` : "Ảnh đại diện";
@@ -331,12 +331,110 @@
     if (!rows.length) { const e = document.createElement("div"); e.className = "v37-chat-empty"; e.textContent = "Chưa có tin nhắn. Hãy gửi lời chào đầu tiên."; root.append(e); return; }
     const frag = document.createDocumentFragment(); for (const row of rows) frag.append(messageNode(row)); root.append(frag); root.scrollTop = root.scrollHeight;
   }
+  function messageMetaText(row, mine) {
+    const bits = [formatTime(row.created_at)];
+    if (row.edited_at && !row.revoked_at) bits.push("Đã chỉnh sửa");
+    if (mine && row.read_at) bits.push("Đã xem");
+    return bits.join(" · ");
+  }
+
+  async function editOwnMessage(row) {
+    if (!row?.id || row.sender_id !== state.user?.id || row.revoked_at) return;
+    const nodes = [...document.querySelectorAll(`[data-message-id="${CSS.escape(String(row.id))}"]`)];
+    if (!nodes.length) return;
+    const primary = nodes[0];
+    if (primary.querySelector(".v39-message-edit-box")) return;
+    const body = primary.querySelector("p");
+    const actions = primary.querySelector(".v39-message-actions");
+    if (!body) return;
+    actions?.removeAttribute("open");
+    body.classList.add("hidden");
+    const box = document.createElement("div"); box.className = "v39-message-edit-box";
+    const input = document.createElement("textarea"); input.maxLength = 2000; input.rows = 2; input.value = row.body || "";
+    const buttons = document.createElement("div"); buttons.className = "v39-message-edit-buttons";
+    const cancel = document.createElement("button"); cancel.type = "button"; cancel.textContent = "Hủy";
+    const save = document.createElement("button"); save.type = "button"; save.className = "save"; save.textContent = "Lưu";
+    buttons.append(cancel, save); box.append(input, buttons); body.after(box);
+    const finish = () => { box.remove(); body.classList.remove("hidden"); };
+    cancel.addEventListener("click", finish);
+    save.addEventListener("click", async () => {
+      const value = input.value.trim();
+      if (!value || value === String(row.body || "")) return finish();
+      save.disabled = true;
+      try {
+        const { data, error } = await client().rpc("edit_direct_message", { p_message: Number(row.id), p_body: value });
+        if (error) throw error;
+        const updated = Array.isArray(data) ? data[0] : data;
+        if (updated) applyMessageUpdate(updated);
+        scheduleContactsRefresh(80);
+      } catch (error) {
+        console.error("edit message", error);
+        toast("Không sửa được tin nhắn", error.message || String(error), "error");
+        save.disabled = false;
+      }
+    });
+    input.addEventListener("keydown", e => {
+      if (e.key === "Escape") finish();
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); save.click(); }
+    });
+    setTimeout(() => { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }, 20);
+  }
+
+  async function revokeOwnMessage(row) {
+    if (!row?.id || row.sender_id !== state.user?.id || row.revoked_at) return;
+    const ok = await NTS.dialog?.confirm?.({
+      title: "Thu hồi tin nhắn?",
+      message: "Nội dung sẽ được thay bằng trạng thái ‘Tin nhắn đã được thu hồi’ ở cả hai phía.",
+      confirmText: "Thu hồi",
+      danger: true
+    });
+    if (!ok) return;
+    try {
+      const { data, error } = await client().rpc("revoke_direct_message", { p_message: Number(row.id) });
+      if (error) throw error;
+      const updated = Array.isArray(data) ? data[0] : data;
+      if (updated) applyMessageUpdate(updated);
+      scheduleContactsRefresh(80);
+      toast("Đã thu hồi", "Tin nhắn đã được thu hồi ở cả hai phía.", "success", 2600);
+    } catch (error) {
+      console.error("revoke message", error);
+      toast("Không thu hồi được", error.message || String(error), "error");
+    }
+  }
+
   function messageNode(row, floating = false) {
     const mine = row.sender_id === state.user?.id;
-    const wrap = document.createElement("article"); wrap.className = `${floating ? "v38-float-message" : "v37-message"} ${mine ? "mine" : "theirs"}`; wrap.dataset.messageId = String(row.id);
-    const body = document.createElement("p"); body.textContent = row.body;
-    const meta = document.createElement("span"); meta.textContent = formatTime(row.created_at) + (mine && row.read_at ? " · Đã xem" : "");
-    wrap.append(body, meta); return wrap;
+    const revoked = Boolean(row.revoked_at);
+    const wrap = document.createElement("article");
+    wrap.className = `${floating ? "v38-float-message" : "v37-message"} ${mine ? "mine" : "theirs"}${revoked ? " revoked" : ""}`;
+    wrap.dataset.messageId = String(row.id);
+
+    const body = document.createElement("p");
+    body.textContent = revoked ? "Tin nhắn đã được thu hồi" : row.body;
+    if (revoked) body.classList.add("v39-revoked-body");
+    const meta = document.createElement("span"); meta.className = "v39-message-meta"; meta.textContent = messageMetaText(row, mine);
+    wrap.append(body, meta);
+
+    if (mine && !revoked) {
+      const details = document.createElement("details"); details.className = "v39-message-actions";
+      const summary = document.createElement("summary"); summary.setAttribute("aria-label", "Tùy chọn tin nhắn"); summary.title = "Tùy chọn"; summary.textContent = "•••";
+      const menu = document.createElement("div"); menu.className = "v39-message-menu";
+      const edit = document.createElement("button"); edit.type = "button"; edit.textContent = "Chỉnh sửa";
+      const revoke = document.createElement("button"); revoke.type = "button"; revoke.className = "danger"; revoke.textContent = "Thu hồi";
+      edit.addEventListener("click", e => { e.preventDefault(); details.removeAttribute("open"); editOwnMessage(row); });
+      revoke.addEventListener("click", e => { e.preventDefault(); details.removeAttribute("open"); revokeOwnMessage(row); });
+      menu.append(edit, revoke); details.append(summary, menu); wrap.append(details);
+    }
+    return wrap;
+  }
+
+  function applyMessageUpdate(row) {
+    if (!row?.id) return;
+    const selector = `[data-message-id="${CSS.escape(String(row.id))}"]`;
+    document.querySelectorAll(selector).forEach(node => {
+      const floating = node.classList.contains("v38-float-message");
+      node.replaceWith(messageNode(row, floating));
+    });
   }
   function appendMessageToRoot(root, row, floating = false) {
     if (!root || !row) return;
@@ -373,10 +471,10 @@
     return Boolean(entry && !entry.minimized && !entry.closed);
   }
 
-  function updateReadReceipt(row) {
+  function handleMessageUpdate(row) {
     if (!row?.id) return;
-    const nodes = document.querySelectorAll(`[data-message-id="${CSS.escape(String(row.id))}"] span`);
-    nodes.forEach(node => { if (row.sender_id === state.user?.id && row.read_at) node.textContent = `${formatTime(row.created_at)} · Đã xem`; });
+    applyMessageUpdate(row);
+    scheduleContactsRefresh(90);
   }
 
   function scheduleContactsRefresh(delay = 220) {
@@ -408,7 +506,8 @@
     closeMessageChannel(); if (!state.user || !client()) return;
     state.messageChannel = client().channel(`nts-global-inbox-${state.user.id}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "direct_messages", filter: `recipient_id=eq.${state.user.id}` }, payload => handleIncomingMessage(payload.new))
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "direct_messages", filter: `sender_id=eq.${state.user.id}` }, payload => updateReadReceipt(payload.new))
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "direct_messages", filter: `sender_id=eq.${state.user.id}` }, payload => handleMessageUpdate(payload.new))
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "direct_messages", filter: `recipient_id=eq.${state.user.id}` }, payload => handleMessageUpdate(payload.new))
       .subscribe((status, error) => {
         if (status === "CHANNEL_ERROR") console.error("NTS messenger channel", error);
       });

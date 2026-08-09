@@ -99,6 +99,11 @@
     const detail = admin ? "Toàn quyền quản trị" : vip ? `Hết hạn ${NTS.membership?.dateTime?.(account.vip_until) || "—"}` : `${Math.max(0, Number(account.remaining || 0))} ảnh còn lại`;
     if ($("v36CurrentPlan")) $("v36CurrentPlan").textContent = name;
     if ($("v36CurrentPlanDetail")) $("v36CurrentPlanDetail").textContent = detail;
+    const currentPlanCard = document.querySelector(".v36-current-membership");
+    if (currentPlanCard) {
+      currentPlanCard.classList.remove("v39-current-admin", "v39-current-vip", "v39-current-free");
+      currentPlanCard.classList.add(admin ? "v39-current-admin" : vip ? "v39-current-vip" : "v39-current-free");
+    }
     if ($("v36ProfilePlanName")) $("v36ProfilePlanName").textContent = name;
     if ($("v36ProfilePlanSub")) $("v36ProfilePlanSub").textContent = detail;
     if ($("v36ProfilePlanIcon")) $("v36ProfilePlanIcon").textContent = admin ? "◆" : vip ? "✦" : "◇";

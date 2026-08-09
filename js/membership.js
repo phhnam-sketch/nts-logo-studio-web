@@ -87,6 +87,11 @@
       const el = $(id); if (!el) return;
       el.textContent = planLabel; el.className = `plan-badge ${admin ? "admin" : vip ? "vip" : "free"}`;
     });
+    const userChip = $("userMenuButton");
+    if (userChip) {
+      userChip.classList.remove("v39-user-admin", "v39-user-vip", "v39-user-free");
+      userChip.classList.add(admin ? "v39-user-admin" : vip ? "v39-user-vip" : "v39-user-free");
+    }
     $("adminNavButton")?.classList.toggle("hidden", !admin);
     $("adminQuickMenu")?.classList.toggle("hidden", !admin);
     const remain = vip ? "Không giới hạn" : `${Math.max(0, Number(a.remaining || 0))}/${Number(a.free_limit || 10)} ảnh còn lại`;
