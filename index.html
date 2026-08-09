@@ -21,7 +21,7 @@
         <img class="brand-logo-image" src="assets/brand/logo.png" alt="NTS" />
         <div>
           <div class="brand-name">NTS LOGO STUDIO</div>
-          <div class="brand-version">NTS EDITION</div>
+          <div class="brand-version">WEB EDITION</div>
         </div>
       </div>
 
@@ -61,7 +61,7 @@
     <section class="auth-form-panel">
       <div class="auth-card">
         <div class="auth-heading">
-          <span class="auth-badge">NTS LOGIN</span>
+          <span class="auth-badge">NTS CLOUD</span>
           <h2 id="authTitle">Chào mừng trở lại</h2>
           <p id="authSubtitle">Đăng nhập để tiếp tục vào Logo Studio.</p>
         </div>
@@ -137,8 +137,8 @@
         <button id="mobileLibraryToggle" class="icon-button mobile-only" type="button" aria-label="Mở thư viện">☰</button>
         <img class="brand-logo-image small" src="assets/brand/logo.png" alt="NTS" />
         <div class="app-brand-text">
-          <strong>NTS STUDIO</strong>
-          <span>WEB V3.4</span>
+          <strong>NTS LOGO STUDIO</strong>
+          <span>NAM TIÊN SINH</span>
         </div>
       </div>
 
@@ -402,7 +402,7 @@
             </div>
             <div class="export-performance-card">
               <div class="export-performance-head">
-                <div><strong>Engine xuất V3.3</strong><small></small></div>
+                <div><strong>Engine xuất V3.3</strong><small>Turbo dùng Web Worker song song trên PC; không phụ thuộc requestAnimationFrame nên đổi tab không còn làm batch đứng ở điểm yield.</small></div>
                 <span id="exportEngineStatus" class="engine-badge" data-kind="turbo">TURBO</span>
               </div>
               <label class="export-mode-field" for="exportSpeedMode">
@@ -453,9 +453,27 @@
         <div class="account-grid">
           <form id="profileForm" class="content-card profile-form-card">
             <div class="card-heading"><div><span class="eyebrow">HỒ SƠ</span><h2>Thông tin cá nhân</h2></div><button id="saveProfileButton" class="primary-button compact" type="submit">Lưu thay đổi</button></div>
-            <div class="media-upload-grid">
-              <div class="media-upload-card enhanced-media-card"><div><strong>Ảnh đại diện</strong><span>Ảnh sẽ tự tối ưu trước khi tải lên. Hỗ trợ ảnh từ điện thoại nếu trình duyệt đọc được.</span></div><label class="media-file-button">Chọn ảnh<input id="profileAvatarInput" type="file" accept="image/*" /></label><button id="removeAvatarButton" class="text-button danger-text" type="button">Xóa ảnh đại diện</button></div>
-              <div class="media-upload-card enhanced-media-card"><div><strong>Ảnh bìa</strong><span>Khuyên dùng ảnh ngang. Hệ thống tự giảm kích thước để upload ổn định.</span></div><label class="media-file-button">Chọn ảnh<input id="profileCoverInput" type="file" accept="image/*" /></label><button id="removeCoverButton" class="text-button danger-text" type="button">Xóa ảnh bìa</button></div>
+            <div class="media-upload-grid profile-media-editor-grid">
+              <section class="media-upload-card enhanced-media-card profile-media-editor">
+                <div><strong>Ảnh đại diện</strong><span>Chọn ảnh → kéo vị trí bằng thanh X/Y → zoom → Lưu. Preview đổi ngay, file được tối ưu nền để giảm thời gian chờ.</span></div>
+                <label class="media-file-button">Chọn ảnh<input id="profileAvatarInput" type="file" accept="image/*" /></label>
+                <div class="profile-position-controls">
+                  <label><span>Ngang X</span><input id="avatarPosX" type="range" min="0" max="100" value="50"><b id="avatarPosXValue">50%</b></label>
+                  <label><span>Dọc Y</span><input id="avatarPosY" type="range" min="0" max="100" value="50"><b id="avatarPosYValue">50%</b></label>
+                  <label><span>Zoom</span><input id="avatarZoom" type="range" min="100" max="220" value="100"><b id="avatarZoomValue">100%</b></label>
+                </div>
+                <div class="media-editor-actions"><button id="centerAvatarButton" class="secondary-button compact" type="button">Căn giữa</button><button id="removeAvatarButton" class="text-button danger-text" type="button">Xóa ảnh đại diện</button></div>
+              </section>
+              <section class="media-upload-card enhanced-media-card profile-media-editor">
+                <div><strong>Ảnh bìa</strong><span>Chọn ảnh ngang hoặc dọc đều được. Điều chỉnh vùng nhìn trực tiếp trước khi lưu.</span></div>
+                <label class="media-file-button">Chọn ảnh<input id="profileCoverInput" type="file" accept="image/*" /></label>
+                <div class="profile-position-controls">
+                  <label><span>Ngang X</span><input id="coverPosX" type="range" min="0" max="100" value="50"><b id="coverPosXValue">50%</b></label>
+                  <label><span>Dọc Y</span><input id="coverPosY" type="range" min="0" max="100" value="50"><b id="coverPosYValue">50%</b></label>
+                  <label><span>Zoom</span><input id="coverZoom" type="range" min="100" max="220" value="100"><b id="coverZoomValue">100%</b></label>
+                </div>
+                <div class="media-editor-actions"><button id="centerCoverButton" class="secondary-button compact" type="button">Căn giữa</button><button id="removeCoverButton" class="text-button danger-text" type="button">Xóa ảnh bìa</button></div>
+              </section>
             </div>
             <div id="profileMediaStatus" class="profile-media-status">Chưa có thay đổi hình ảnh.</div>
             <div class="form-grid two-col">
@@ -497,6 +515,23 @@
           </div>
         </section>
 
+        <section class="content-card auto-pay-card">
+          <div class="card-heading"><div><span class="eyebrow">THANH TOÁN TỰ ĐỘNG</span><h2>Quét QR → hệ thống tự mở VIP</h2><p>Đơn được tạo server-side với đúng số tiền. Khi payOS webhook xác nhận tổng tiền <strong>khớp chính xác</strong>, VIP được cộng tự động. Thiếu tiền hoặc dư tiền sẽ không tự mở.</p></div><span id="autoPayBadge" class="payment-live-status">payOS</span></div>
+          <div class="auto-pay-grid">
+            <div><strong id="autoPayAmount">200.000 ₫</strong><span id="autoPayMonths">1 tháng VIP</span><small>Không cần gửi ảnh minh chứng nếu thanh toán qua payOS.</small></div>
+            <button id="createAutoPaymentButton" class="primary-button" type="button">Tạo QR thanh toán tự động</button>
+          </div>
+          <div id="autoPaymentResult" class="auto-payment-result hidden">
+            <div><span>Mã đơn</span><strong id="autoPaymentOrderCode">—</strong></div>
+            <div><span>Trạng thái</span><strong id="autoPaymentState">Đang chờ thanh toán</strong></div>
+            <button id="openAutoCheckoutButton" class="secondary-button" type="button">Mở lại trang QR payOS</button>
+          </div>
+          <p class="section-note">Luồng tự động cần deploy 2 Supabase Edge Functions <code>create-payos-payment</code> và <code>payos-webhook</code>, đồng thời cấu hình PAYOS_CLIENT_ID / PAYOS_API_KEY / PAYOS_CHECKSUM_KEY trong Supabase Secrets.</p>
+        </section>
+
+        <details class="manual-payment-fallback">
+          <summary>Thanh toán thủ công dự phòng</summary>
+          <div class="manual-payment-body">
         <div class="payment-layout smart-payment-layout">
           <article class="content-card qr-card smart-qr-card">
             <div class="card-heading"><div><span class="eyebrow">BƯỚC 2 · QUÉT QR</span><h2>Chuyển khoản ngân hàng</h2></div><span class="secure-chip">QR TĨNH</span></div>
@@ -522,6 +557,8 @@
           <div class="field"><label for="paymentNote">Ghi chú</label><textarea id="paymentNote" maxlength="500" rows="3" placeholder="Ghi chú thêm cho quản trị viên (nếu có)"></textarea></div>
           <div class="payment-submit-actions"><div class="payment-trust-note"><span>✓</span><p>Admin duyệt yêu cầu sẽ tự cộng đúng số tháng đã chọn. Trang tự kiểm tra lại trạng thái khi bạn đang mở.</p></div><button id="submitPaymentButton" class="primary-button" type="submit">Gửi yêu cầu xác nhận</button></div>
         </form>
+          </div>
+        </details>
         <div class="content-card payment-history-card"><div class="card-heading"><div><span class="eyebrow">LỊCH SỬ & TRẠNG THÁI</span><h2>Yêu cầu nâng cấp</h2></div><button id="refreshPaymentHistory" class="secondary-button compact" type="button">↻ Kiểm tra</button></div><div id="paymentHistory"><p class="muted">Chưa có yêu cầu.</p></div></div>
       </div>
     </section>
@@ -546,7 +583,7 @@
             <section class="settings-subcard"><div class="settings-subhead"><span class="settings-icon">◇</span><div><strong>Gói dịch vụ</strong><small>Quyền lợi cơ bản và giá bán</small></div></div><div class="form-grid two-col"><div class="field"><label for="adminFreeLimit">Quota Free / tháng</label><input id="adminFreeLimit" type="number" min="0" max="100000" required /></div><div class="field"><label for="adminVipPrice">Giá VIP / tháng (VND)</label><input id="adminVipPrice" type="number" min="0" step="1000" required /></div></div><div class="settings-tip">VIP nhiều tháng được tính tự động theo giá tháng × số tháng. Admin duyệt sẽ cộng đúng thời hạn hội viên mua.</div></section>
             <section class="settings-subcard"><div class="settings-subhead"><span class="settings-icon">₫</span><div><strong>Tài khoản nhận tiền</strong><small>Hiển thị cho người mua VIP</small></div></div><div class="form-grid two-col"><div class="field"><label for="adminBankName">Ngân hàng</label><input id="adminBankName" maxlength="100" placeholder="Ví dụ: MB Bank" /></div><div class="field"><label for="adminAccountName">Tên chủ tài khoản</label><input id="adminAccountName" maxlength="120" /></div></div><div class="form-grid two-col"><div class="field"><label for="adminAccountNumber">Số tài khoản</label><input id="adminAccountNumber" maxlength="60" inputmode="numeric" /></div><div class="field"><label for="adminTransferPrefix">Tiền tố nội dung CK</label><input id="adminTransferPrefix" maxlength="16" placeholder="NTSVIP" /></div></div></section>
             <section class="settings-subcard qr-admin-subcard"><div class="settings-subhead"><span class="settings-icon">▦</span><div><strong>QR thanh toán</strong><small>Admin có thể thay QR PNG trực tiếp, không cần sửa GitHub</small></div></div><div class="admin-qr-preview-row"><img id="adminQrPreview" src="assets/payment/payment-qr.png" alt="QR hiện tại" /><div><strong id="adminQrSource">QR mặc định trong package</strong><p id="adminQrStatus">Khuyên dùng PNG vuông, rõ nét, tối đa 5 MB.</p><div class="admin-qr-actions"><label class="secondary-button compact qr-upload-button">Chọn QR PNG<input id="adminQrInput" type="file" accept="image/png" hidden /></label><button id="resetAdminQr" class="text-button" type="button">Dùng QR mặc định</button></div></div></div></section>
-            <section class="settings-subcard"><div class="settings-subhead"><span class="settings-icon">i</span><div><strong>Thông báo hỗ trợ</strong><small>Hiển thị dưới thông tin chuyển khoản</small></div></div><div class="field"><label for="adminSupportText">Nội dung</label><textarea id="adminSupportText" maxlength="500" rows="4" placeholder="Ví dụ: Yêu cầu thường được duyệt trong 5-30 phút..."></textarea></div><div class="settings-tip success">Thanh toán hiện là chuyển khoản + đối soát mã đơn + admin duyệt. Muốn kích hoạt VIP tự động ngay khi tiền vào cần API/webhook ngân hàng hoặc cổng thanh toán.</div></section>
+            <section class="settings-subcard"><div class="settings-subhead"><span class="settings-icon">i</span><div><strong>Thông báo hỗ trợ</strong><small>Hiển thị dưới thông tin chuyển khoản</small></div></div><div class="field"><label for="adminSupportText">Nội dung</label><textarea id="adminSupportText" maxlength="500" rows="4" placeholder="Ví dụ: Yêu cầu thường được duyệt trong 5-30 phút..."></textarea></div><div class="settings-tip success">V3.5 hỗ trợ payOS webhook để tự kích hoạt VIP khi tổng tiền khớp chính xác. Thanh toán thủ công vẫn được giữ làm phương án dự phòng.</div></section>
           </div>
         </form>
       </div>

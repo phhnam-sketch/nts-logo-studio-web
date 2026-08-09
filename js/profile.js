@@ -11,12 +11,18 @@
     removeAvatar: false,
     removeCover: false,
     previewUrls: { avatar: null, cover: null },
-    runtimeUrls: { avatar: null, cover: null }
+    runtimeUrls: { avatar: null, cover: null },
+    preparedMedia: { avatar: null, cover: null },
+    prepareTokens: { avatar: 0, cover: 0 }
   };
   const toast = (t, m, k = "info", d) => NTS.showToast?.(t, m, k, d);
   const client = () => NTS.supabase;
 
-  function defaults() { return { display_name: "Người dùng", bio: "", avatar_url: null, cover_url: null, updated_at: null }; }
+  function defaults() { return {
+    display_name: "Người dùng", bio: "", avatar_url: null, cover_url: null, updated_at: null,
+    avatar_pos_x: 50, avatar_pos_y: 50, avatar_zoom: 100,
+    cover_pos_x: 50, cover_pos_y: 50, cover_zoom: 100
+  }; }
   function brandFallback(kind) {
     const brand = cfg.BRAND || {};
     return kind === "avatar"
@@ -78,6 +84,27 @@
     return p.cover_url ? cacheBust(p.cover_url, p.updated_at || Date.now()) : brandFallback("cover");
   }
 
+  function clamp(v, min, max, fallback) {
+    const n = Number(v); return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback;
+  }
+  function mediaAdjust(kind) {
+    const p = state.profile || defaults();
+    return kind === "avatar"
+      ? { x: clamp(p.avatar_pos_x,0,100,50), y: clamp(p.avatar_pos_y,0,100,50), zoom: clamp(p.avatar_zoom,100,220,100) }
+      : { x: clamp(p.cover_pos_x,0,100,50), y: clamp(p.cover_pos_y,0,100,50), zoom: clamp(p.cover_zoom,100,220,100) };
+  }
+  function applyMediaAdjust(kind) {
+    const a = mediaAdjust(kind);
+    const img = $(kind === "avatar" ? "profileAvatarPreview" : "profileCoverPreview");
+    if (img) {
+      img.style.objectPosition = `${a.x}% ${a.y}%`;
+      img.style.setProperty("--profile-media-zoom", String(a.zoom / 100));
+    }
+    const prefix = kind === "avatar" ? "avatar" : "cover";
+    [[`${prefix}PosX`, a.x],[`${prefix}PosY`, a.y],[`${prefix}Zoom`, a.zoom]].forEach(([id,val]) => { if ($(id)) $(id).value = String(val); });
+    [[`${prefix}PosXValue`, `${Math.round(a.x)}%`],[`${prefix}PosYValue`, `${Math.round(a.y)}%`],[`${prefix}ZoomValue`, `${Math.round(a.zoom)}%`]].forEach(([id,val]) => { if ($(id)) $(id).textContent = val; });
+  }
+
   function render() {
     const p = state.profile || defaults();
     if ($("profileDisplayName")) $("profileDisplayName").value = p.display_name || "";
@@ -93,10 +120,13 @@
     if ($("userAvatarImage")) {
       setImg("userAvatarImage", avatar, brandFallback("avatar"));
       $("userAvatarImage").classList.remove("hidden");
+      $("userAvatarImage").style.objectPosition = `${mediaAdjust("avatar").x}% ${mediaAdjust("avatar").y}%`;
       $("userAvatarFallback")?.classList.add("hidden");
     }
     if ($("userDisplayName")) $("userDisplayName").textContent = p.display_name || "Người dùng";
     if ($("menuDisplayName")) $("menuDisplayName").textContent = p.display_name || "Người dùng";
+    applyMediaAdjust("avatar");
+    applyMediaAdjust("cover");
   }
 
   function imageLoads(url) {
@@ -190,14 +220,15 @@
       const scale = Math.min(1, maxW / srcW, maxH / srcH);
       const width = Math.max(1, Math.round(srcW * scale));
       const height = Math.max(1, Math.round(srcH * scale));
-      const canvas = document.createElement("canvas");
+      const canvas = typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(width, height) : document.createElement("canvas");
       canvas.width = width; canvas.height = height;
-      const ctx = canvas.getContext("2d", { alpha: false });
+      const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
       ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, width, height);
       ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
       ctx.drawImage(decoded, 0, 0, width, height);
-      // JPEG is intentionally used here for the widest mobile/browser compatibility.
-      const blob = await canvasBlob(canvas, "image/jpeg", kind === "avatar" ? .93 : .91);
+      const blob = canvas.convertToBlob
+        ? await canvas.convertToBlob({ type: "image/jpeg", quality: kind === "avatar" ? .92 : .90 })
+        : await canvasBlob(canvas, "image/jpeg", kind === "avatar" ? .92 : .90);
       canvas.width = canvas.height = 1;
       if (blob.size > 5 * 1024 * 1024) throw new Error("Ảnh sau tối ưu vẫn lớn hơn 5 MB. Hãy chọn ảnh khác.");
       return { blob, width, height, extension: "jpg" };
@@ -211,7 +242,7 @@
   }
 
   async function uploadProfileMedia(file, kind, oldUrl) {
-    const normalized = await normalizeProfileImage(file, kind);
+    const normalized = state.preparedMedia[kind]?.file === file ? state.preparedMedia[kind].normalized : await normalizeProfileImage(file, kind);
     const path = `${state.user.id}/${kind}.jpg`;
     mediaStatus(`Đang tải ${kind === "avatar" ? "ảnh đại diện" : "ảnh bìa"}...`, "busy");
     const { error } = await client().storage.from("profile-media").upload(path, normalized.blob, {
@@ -255,12 +286,24 @@
       const avatarFile = $("profileAvatarInput")?.files?.[0];
       const coverFile = $("profileCoverInput")?.files?.[0];
 
-      if (state.removeAvatar && state.profile?.avatar_url) await removeStoredPath(state.profile.avatar_url);
-      if (state.removeCover && state.profile?.cover_url) await removeStoredPath(state.profile.cover_url);
-      if (avatarFile) avatarUrl = await uploadProfileMedia(avatarFile, "avatar", state.profile?.avatar_url);
-      if (coverFile) coverUrl = await uploadProfileMedia(coverFile, "cover", state.profile?.cover_url);
+      const removalJobs = [];
+      if (state.removeAvatar && state.profile?.avatar_url) removalJobs.push(removeStoredPath(state.profile.avatar_url));
+      if (state.removeCover && state.profile?.cover_url) removalJobs.push(removeStoredPath(state.profile.cover_url));
+      if (removalJobs.length) await Promise.allSettled(removalJobs);
 
-      const payload = { display_name: displayName, bio, avatar_url: avatarUrl, cover_url: coverUrl };
+      mediaStatus("Đang lưu ảnh và vị trí...", "busy");
+      const [avatarResult, coverResult] = await Promise.all([
+        avatarFile ? uploadProfileMedia(avatarFile, "avatar", state.profile?.avatar_url) : Promise.resolve(avatarUrl),
+        coverFile ? uploadProfileMedia(coverFile, "cover", state.profile?.cover_url) : Promise.resolve(coverUrl)
+      ]);
+      avatarUrl = avatarResult; coverUrl = coverResult;
+
+      const a = mediaAdjust("avatar"), c = mediaAdjust("cover");
+      const payload = {
+        display_name: displayName, bio, avatar_url: avatarUrl, cover_url: coverUrl,
+        avatar_pos_x: a.x, avatar_pos_y: a.y, avatar_zoom: a.zoom,
+        cover_pos_x: c.x, cover_pos_y: c.y, cover_zoom: c.zoom
+      };
       const { data, error } = await client().from("profiles").update(payload).eq("id", state.user.id).select("*").single();
       if (error) throw error;
       if (!data) throw new Error("Không nhận được hồ sơ sau khi lưu. Hãy kiểm tra RLS của bảng profiles.");
@@ -271,16 +314,17 @@
       if ($("profileAvatarInput")) $("profileAvatarInput").value = "";
       if ($("profileCoverInput")) $("profileCoverInput").value = "";
       state.removeAvatar = false; state.removeCover = false;
-      mediaStatus("Đã lưu thành công. Đang xác minh ảnh từ Storage...", "busy");
-
-      const checks = await Promise.allSettled([ensureVisibleMedia("avatar"), ensureVisibleMedia("cover")]);
-      ["avatar", "cover"].forEach((kind, i) => {
-        const ok = checks[i].status === "fulfilled" && checks[i].value === true;
-        if (ok) revokeUrl("previewUrls", kind);
-      });
+      state.preparedMedia.avatar = null; state.preparedMedia.cover = null;
+      mediaStatus("Đã lưu. Ảnh đang đồng bộ nền nhưng preview và vị trí đã được áp dụng ngay.", "ok");
       render();
-      mediaStatus("Đã lưu và hiển thị hồ sơ thành công.", "ok");
-      toast("Hồ sơ đã cập nhật", "Ảnh đại diện, ảnh bìa và thông tin cá nhân đã được đồng bộ.", "success");
+      toast("Hồ sơ đã cập nhật", "Ảnh và vị trí hiển thị đã được lưu. Bạn có thể tiếp tục sử dụng app ngay.", "success");
+      Promise.allSettled([ensureVisibleMedia("avatar"), ensureVisibleMedia("cover")]).then(checks => {
+        ["avatar", "cover"].forEach((kind, i) => {
+          const ok = checks[i].status === "fulfilled" && checks[i].value === true;
+          if (ok) revokeUrl("previewUrls", kind);
+        });
+        render();
+      });
     } catch (error) {
       console.error(error);
       mediaStatus(error.message || String(error), "error");
@@ -297,8 +341,21 @@
     revokeUrl("previewUrls", kind);
     state.previewUrls[kind] = URL.createObjectURL(file);
     state[kind === "avatar" ? "removeAvatar" : "removeCover"] = false;
+    state.preparedMedia[kind] = null;
+    const token = ++state.prepareTokens[kind];
     render();
-    mediaStatus(`${kind === "avatar" ? "Ảnh đại diện" : "Ảnh bìa"} mới đã sẵn sàng. Bấm “Lưu thay đổi” để upload.`, "pending");
+    mediaStatus(`${kind === "avatar" ? "Ảnh đại diện" : "Ảnh bìa"} đã hiển thị. Bạn có thể chỉnh vị trí ngay; hệ thống đang tối ưu file nền...`, "pending");
+    window.setTimeout(() => {
+      normalizeProfileImage(file, kind).then(normalized => {
+        if (state.prepareTokens[kind] !== token) return;
+        state.preparedMedia[kind] = { file, normalized };
+        mediaStatus("Ảnh đã tối ưu xong trong nền. Bấm “Lưu thay đổi” để lưu rất nhanh.", "ok");
+      }).catch(error => {
+        if (state.prepareTokens[kind] !== token) return;
+        console.warn("profile pre-prepare failed", error);
+        mediaStatus("Preview vẫn dùng được; ảnh sẽ được tối ưu lại khi bấm Lưu.", "pending");
+      });
+    }, 40);
   }
   function markRemove(kind) {
     state[kind === "avatar" ? "removeAvatar" : "removeCover"] = true;
@@ -316,6 +373,28 @@
   $("profileCoverInput")?.addEventListener("change", e => previewFile(e.target.files?.[0], "cover"));
   $("removeAvatarButton")?.addEventListener("click", () => markRemove("avatar"));
   $("removeCoverButton")?.addEventListener("click", () => markRemove("cover"));
+
+  function bindAdjust(kind) {
+    const prefix = kind === "avatar" ? "avatar" : "cover";
+    [[`${prefix}PosX`, kind === "avatar" ? "avatar_pos_x" : "cover_pos_x"],
+     [`${prefix}PosY`, kind === "avatar" ? "avatar_pos_y" : "cover_pos_y"],
+     [`${prefix}Zoom`, kind === "avatar" ? "avatar_zoom" : "cover_zoom"]].forEach(([id,key]) => {
+      $(id)?.addEventListener("input", e => {
+        state.profile = { ...defaults(), ...(state.profile || {}) };
+        state.profile[key] = Number(e.target.value);
+        applyMediaAdjust(kind);
+        mediaStatus("Vị trí ảnh đã thay đổi. Bấm “Lưu thay đổi” để ghi nhớ.", "pending");
+      });
+    });
+    $(kind === "avatar" ? "centerAvatarButton" : "centerCoverButton")?.addEventListener("click", () => {
+      state.profile = { ...defaults(), ...(state.profile || {}) };
+      if (kind === "avatar") Object.assign(state.profile, { avatar_pos_x:50, avatar_pos_y:50, avatar_zoom:100 });
+      else Object.assign(state.profile, { cover_pos_x:50, cover_pos_y:50, cover_zoom:100 });
+      applyMediaAdjust(kind);
+      mediaStatus("Đã căn giữa. Bấm “Lưu thay đổi” để ghi nhớ.", "pending");
+    });
+  }
+  bindAdjust("avatar"); bindAdjust("cover");
 
   window.addEventListener("nts:auth-user", e => {
     const next = e.detail.user || null;

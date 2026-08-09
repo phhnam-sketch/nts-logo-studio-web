@@ -27,7 +27,7 @@ window.APP_CONFIG = {
   SUPABASE_PUBLISHABLE_KEY: "sb_publishable___QvvAoa-1g7xxiPYXvFaw_r5vTMQ8Q",
 
   APP_NAME: "NTS Logo Studio Pro Web",
-  APP_VERSION: "3.4.0",
+  APP_VERSION: "3.5.0",
 
   BRAND: {
     shortName: "NTS",
@@ -48,8 +48,8 @@ window.APP_CONFIG = {
     heroOpacity: 1,
     overlayOpacity: 0.70,
     eyebrow: "NTS UI",
-    title: "NAM TIÊN SINH",
-    subtitle: "Dùng đi chần chờ gì nữa"
+    title: "NHÌN SANG PHẢI",
+    subtitle: "Đăng nhập để quản lý phiên làm việc, sử dụng giao diện tối ưu cho desktop, tablet và mobile."
   },
 
   MEMBERSHIP: {

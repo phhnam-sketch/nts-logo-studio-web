@@ -65,7 +65,10 @@
 
   async function loadPayments() {
     const filter = $("adminPaymentFilter")?.value || "pending";
-    let result = await client().rpc("admin_list_payments_v32", { p_status: filter });
+    let result = await client().rpc("admin_list_payments_v35", { p_status: filter });
+    if (result.error && /admin_list_payments_v35|schema cache|function/i.test(String(result.error.message || result.error))) {
+      result = await client().rpc("admin_list_payments_v32", { p_status: filter });
+    }
     if (result.error && /admin_list_payments_v32|schema cache|function/i.test(String(result.error.message || result.error))) {
       result = await client().rpc("admin_list_payments", { p_status: filter });
     }
@@ -87,7 +90,7 @@
       const statusLabel = p.status === "pending" ? "Chờ duyệt" : p.status === "approved" ? "Đã duyệt" : p.status === "rejected" ? "Từ chối" : "Đã hủy";
       cards.push(`<article class="admin-payment-card premium-payment-card">
         <div class="admin-payment-head"><div><strong>${esc(p.display_name)}</strong><span>${esc(p.email)}</span></div><span class="request-status ${p.status}">${statusLabel}</span></div>
-        <div class="payment-review-summary"><div><span>Gói mua</span><strong>${months} tháng VIP</strong></div><div><span>Số tiền</span><strong>${money(p.amount)}</strong></div><div><span>Mã đơn</span><strong>${esc(p.reference || "—")}</strong></div><div><span>Mã giao dịch</span><strong>${esc(p.transaction_code || "—")}</strong></div><div><span>Ngày gửi</span><strong>${dt(p.created_at)}</strong></div></div>
+        <div class="payment-review-summary"><div><span>Gói mua</span><strong>${months} tháng VIP</strong></div><div><span>Số tiền yêu cầu</span><strong>${money(p.amount)}</strong></div><div><span>Đã nhận</span><strong>${money(p.paid_amount || 0)}</strong></div><div><span>Kênh</span><strong>${p.payment_provider === "payos" ? `payOS · ${esc(p.provider_state || "pending")}` : "Thủ công"}</strong></div><div><span>Mã đơn</span><strong>${esc(p.provider_order_code || p.reference || "—")}</strong></div><div><span>Mã giao dịch</span><strong>${esc(p.transaction_code || "—")}</strong></div><div><span>Ngày gửi</span><strong>${dt(p.created_at)}</strong></div></div>
         ${p.note ? `<p class="admin-note">${esc(p.note)}</p>` : ""}
         <div class="payment-proof-row">${url ? `<a class="proof-link" href="${url}" target="_blank" rel="noopener">Xem minh chứng thanh toán ↗</a>` : '<span class="muted">Không có minh chứng</span>'}</div>
         ${p.status === "pending" ? `<div class="admin-payment-actions"><button class="primary-button compact" data-payment-approve="${p.payment_id}" type="button">✓ Duyệt +${months} tháng VIP</button><button class="danger-soft-button compact" data-payment-reject="${p.payment_id}" type="button">Từ chối</button></div>` : `${p.admin_note ? `<small class="admin-review-note">Admin: ${esc(p.admin_note)}</small>` : ""}`}

@@ -12,7 +12,9 @@
     paymentMonths: 1,
     paymentOrderCode: "",
     paymentPollTimer: 0,
-    pendingPaymentIds: new Set()
+    pendingPaymentIds: new Set(),
+    autoPaymentId: null,
+    autoCheckoutUrl: null
   };
 
   function client() { return NTS.supabase; }
@@ -126,6 +128,8 @@
     if ($("selectedPlanMonths")) $("selectedPlanMonths").textContent = `${state.paymentMonths} tháng VIP`;
     if ($("paymentOrderMonths")) $("paymentOrderMonths").textContent = `${state.paymentMonths} tháng`;
     if ($("paymentOrderAmount")) $("paymentOrderAmount").textContent = money(amount);
+    if ($("autoPayAmount")) $("autoPayAmount").textContent = money(amount);
+    if ($("autoPayMonths")) $("autoPayMonths").textContent = `${state.paymentMonths} tháng VIP`;
   }
 
   function renderVipPage() {
@@ -212,6 +216,39 @@
     return path;
   }
 
+  async function createAutoPayment() {
+    const btn = $("createAutoPaymentButton");
+    if (!client() || !state.user) return toast("Cần đăng nhập", "Hãy đăng nhập trước khi tạo đơn thanh toán.", "warning");
+    if (btn) { btn.disabled = true; btn.textContent = "Đang tạo QR bảo mật..."; }
+    try {
+      const { data, error } = await client().functions.invoke("create-payos-payment", {
+        body: { months: state.paymentMonths, origin: window.location.origin }
+      });
+      if (error) throw error;
+      if (!data?.ok || !data?.checkoutUrl) throw new Error(data?.error || "Không tạo được đơn payOS.");
+      state.autoPaymentId = data.paymentId || null;
+      state.autoCheckoutUrl = data.checkoutUrl;
+      if ($("autoPaymentOrderCode")) $("autoPaymentOrderCode").textContent = String(data.orderCode || "—");
+      if ($("autoPaymentState")) $("autoPaymentState").textContent = "Đang chờ đủ tiền";
+      $("autoPaymentResult")?.classList.remove("hidden");
+      if ($("autoPayBadge")) { $("autoPayBadge").textContent = "ĐANG CHỜ"; $("autoPayBadge").dataset.kind = "pending"; }
+      toast("QR tự động đã sẵn sàng", `${money(data.amount)} · ${data.months} tháng. Sau khi payOS xác nhận đủ tiền, VIP sẽ tự mở.`, "success", 7000);
+      window.open(data.checkoutUrl, "_blank", "noopener,noreferrer");
+      startPaymentPolling(true);
+      await loadPaymentHistory({ silent: true });
+    } catch (error) {
+      console.error(error);
+      const msg = String(error?.message || error);
+      toast("Không tạo được thanh toán tự động", msg.includes("PAYOS_NOT_CONFIGURED") ? "Chưa cấu hình Secrets payOS trên Supabase." : msg, "error", 9000);
+      if ($("autoPayBadge")) { $("autoPayBadge").textContent = "CHƯA SẴN SÀNG"; $("autoPayBadge").dataset.kind = "error"; }
+    } finally { if (btn) { btn.disabled = false; btn.textContent = "Tạo QR thanh toán tự động"; } }
+  }
+
+  function openAutoCheckout() {
+    if (!state.autoCheckoutUrl) return toast("Chưa có QR", "Hãy tạo đơn thanh toán tự động trước.", "warning");
+    window.open(state.autoCheckoutUrl, "_blank", "noopener,noreferrer");
+  }
+
   async function submitPayment(event) {
     event.preventDefault();
     const btn = $("submitPaymentButton"); if (btn) { btn.disabled = true; btn.textContent = "Đang gửi yêu cầu..."; }
@@ -258,13 +295,19 @@
     if (!client() || !state.user) return [];
     const wrap = $("paymentHistory"); if (!wrap) return [];
     if (!silent) wrap.innerHTML = '<div class="skeleton-line"></div>';
-    let result = await client().from("payment_requests").select("id,amount,months,status,reference,transaction_code,admin_note,created_at,reviewed_at").eq("user_id", state.user.id).order("created_at", { ascending: false }).limit(20);
+    let result = await client().from("payment_requests").select("id,amount,months,status,reference,transaction_code,admin_note,created_at,reviewed_at,payment_provider,provider_state,provider_order_code,checkout_url,paid_amount,auto_verified").eq("user_id", state.user.id).order("created_at", { ascending: false }).limit(20);
     if (result.error && /transaction_code/i.test(String(result.error.message || result.error))) {
       result = await client().from("payment_requests").select("id,amount,months,status,reference,admin_note,created_at,reviewed_at").eq("user_id", state.user.id).order("created_at", { ascending: false }).limit(20);
     }
     const { data, error } = result;
     if (error) { if (!silent) wrap.innerHTML = '<p class="muted">Không tải được lịch sử thanh toán.</p>'; return []; }
     const rows = data || [];
+    const latestAuto = rows.find(r => r.payment_provider === "payos" && r.status === "pending");
+    if (latestAuto?.checkout_url) { state.autoPaymentId = latestAuto.id; state.autoCheckoutUrl = latestAuto.checkout_url; $("autoPaymentResult")?.classList.remove("hidden"); if ($("autoPaymentOrderCode")) $("autoPaymentOrderCode").textContent = String(latestAuto.provider_order_code || latestAuto.reference || "—"); }
+    if ($("autoPaymentState") && latestAuto) {
+      const ps = latestAuto.provider_state || "pending";
+      $("autoPaymentState").textContent = ps === "underpaid" ? `Thiếu tiền · đã nhận ${money(latestAuto.paid_amount || 0)}` : ps === "overpaid" ? `Dư tiền · cần kiểm tra` : "Đang chờ đủ tiền";
+    }
     const nextPending = new Set(rows.filter(r => r.status === "pending").map(r => r.id));
     const hadPending = state.pendingPaymentIds.size > 0;
     if (hadPending && nextPending.size < state.pendingPaymentIds.size) {
@@ -275,18 +318,21 @@
     if (!rows.length) { wrap.innerHTML = '<div class="payment-empty-state"><span>₫</span><strong>Chưa có yêu cầu nâng cấp</strong><p>Yêu cầu của bạn sẽ xuất hiện ở đây sau khi gửi xác nhận thanh toán.</p></div>'; return rows; }
     wrap.innerHTML = rows.map(row => `
       <article class="payment-history-row enhanced-payment-history">
-        <div><strong>${money(row.amount)}</strong><span>${Number(row.months || 1)} tháng · ${new Date(row.created_at).toLocaleDateString("vi-VN")}</span><small>${escapeHtml(row.reference || "")}${row.transaction_code ? ` · GD: ${escapeHtml(row.transaction_code)}` : ""}</small></div>
-        <span class="request-status ${row.status}">${statusLabel(row.status)}</span>
+        <div><strong>${money(row.amount)}</strong><span>${Number(row.months || 1)} tháng · ${new Date(row.created_at).toLocaleDateString("vi-VN")}</span><small>${escapeHtml(row.reference || "")}${row.payment_provider === "payos" ? ` · payOS${row.provider_order_code ? ` #${escapeHtml(row.provider_order_code)}` : ""}` : ""}${row.transaction_code ? ` · GD: ${escapeHtml(row.transaction_code)}` : ""}${row.status === "pending" && row.paid_amount ? ` · Đã nhận: ${money(row.paid_amount)}` : ""}</small></div>
+        <span class="request-status ${row.status}">${row.auto_verified ? "Tự động duyệt" : row.provider_state === "underpaid" ? "Thiếu tiền" : row.provider_state === "overpaid" ? "Dư tiền" : statusLabel(row.status)}</span>
         ${row.admin_note ? `<p>${escapeHtml(row.admin_note)}</p>` : ""}
       </article>`).join("");
     return rows;
   }
 
-  function startPaymentPolling() {
+  function startPaymentPolling(fast = false) {
     stopPaymentPolling();
-    state.paymentPollTimer = window.setInterval(() => {
-      if (!$("vipPage")?.classList.contains("hidden")) loadPaymentHistory({ silent: true }).catch(() => {});
-    }, 20000);
+    state.paymentPollTimer = window.setInterval(async () => {
+      if (!$("vipPage")?.classList.contains("hidden")) {
+        await loadPaymentHistory({ silent: true }).catch(() => {});
+        await refreshAccount({ silent: true }).catch(() => {});
+      }
+    }, (fast || state.autoPaymentId) ? 5000 : 12000);
   }
   function stopPaymentPolling() { if (state.paymentPollTimer) clearInterval(state.paymentPollTimer); state.paymentPollTimer = 0; }
 
@@ -295,6 +341,8 @@
     state.paymentMonths = Math.max(1, Math.min(12, Number(btn.dataset.months) || 1));
     renderPaymentPlan();
   });
+  $("createAutoPaymentButton")?.addEventListener("click", createAutoPayment);
+  $("openAutoCheckoutButton")?.addEventListener("click", openAutoCheckout);
   $("vipPaymentForm")?.addEventListener("submit", submitPayment);
   $("suspendedLogout")?.addEventListener("click", () => $("logoutButton")?.click());
   $("copyPaymentContent")?.addEventListener("click", () => copyText(state.paymentOrderCode, "Đã sao chép nội dung"));
@@ -316,7 +364,7 @@
 
   window.addEventListener("nts:auth-user", async event => {
     state.user = event.detail.user || null;
-    if (!state.user) { state.account = null; state.paymentOrderCode = ""; stopPaymentPolling(); return; }
+    if (!state.user) { state.account = null; state.paymentOrderCode = ""; state.autoPaymentId = null; state.autoCheckoutUrl = null; stopPaymentPolling(); return; }
     state.paymentOrderCode = "";
     await loadSettings(); regenerateOrderCode(); renderVipPage(); await refreshAccount();
   });
