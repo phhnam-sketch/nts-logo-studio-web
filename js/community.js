@@ -19,6 +19,7 @@
     friendshipChannel: null,
     messageChannel: null,
     presenceChannel: null,
+    publicProfileChannel: null,
     presenceKey: null,
     onlineUserIds: new Set(),
     searchTimer: null,
@@ -185,7 +186,7 @@
   async function loadDirectory(search = "") {
     if (!state.user || !client()) return;
     try {
-      const { data, error } = await rpcCascade(["list_member_directory_v312","list_member_directory_v311","list_member_directory_v310"], { p_search: search.trim(), p_limit: 60 });
+      const { data, error } = await rpcCascade(["list_member_directory_v313","list_member_directory_v312","list_member_directory_v311","list_member_directory_v310"], { p_search: search.trim(), p_limit: 60 });
       if (error) throw error;
       state.directory = Array.isArray(data) ? data : [];
       renderDirectory();
@@ -200,7 +201,7 @@
   async function loadMessengerContacts({ silent = false } = {}) {
     if (!state.user || !client()) return;
     try {
-      const { data, error } = await rpcCascade(["list_messenger_contacts_v312","list_messenger_contacts_v311","list_messenger_contacts_v310"], { p_limit: 60 });
+      const { data, error } = await rpcCascade(["list_messenger_contacts_v313","list_messenger_contacts_v312","list_messenger_contacts_v311","list_messenger_contacts_v310"], { p_limit: 60 });
       if (error) throw error;
       state.messengerContacts = Array.isArray(data) ? data : [];
       state.unread = state.messengerContacts.reduce((sum, x) => sum + Number(x.unread_count || 0), 0);
@@ -335,6 +336,12 @@
     state.presenceChannel = null;
     state.onlineUserIds.clear();
   }
+  function closePublicProfileChannel() {
+    if (state.publicProfileChannel && client()) {
+      try { void client().removeChannel(state.publicProfileChannel); } catch (_) {}
+    }
+    state.publicProfileChannel = null;
+  }
 
   function closeChat() {
     state.activePeer = null;
@@ -348,7 +355,7 @@
   async function getMemberPublic(id) {
     const found = findMember(id); if (found) return found;
     try {
-      const { data, error } = await rpcCascade(["get_member_public_profile_v312","get_member_public_profile_v311","get_member_public_profile_v310"], { p_user: id });
+      const { data, error } = await rpcCascade(["get_member_public_profile_v313","get_member_public_profile_v312","get_member_public_profile_v311","get_member_public_profile_v310"], { p_user: id });
       if (error) throw error;
       const row = Array.isArray(data) ? data[0] : data;
       return row ? normalizeContact({ ...row, peer_id: row.user_id }) : null;
@@ -583,6 +590,61 @@
     }
   }
 
+  function normalizePublicProfileRow(row) {
+    if (!row?.user_id) return null;
+    return {
+      user_id: row.user_id,
+      peer_id: row.user_id,
+      display_name: row.display_name || "Hội viên",
+      avatar_url: row.avatar_url || null,
+      oauth_avatar_url: row.oauth_avatar_url || null,
+      avatar_storage_path: row.avatar_object_path || row.avatar_storage_path || null,
+      avatar_storage_version: row.avatar_updated_at || row.updated_at || null,
+      avatar_revision: Number(row.avatar_revision || 0),
+      role: row.role || "member",
+      plan: row.plan || "free",
+      is_vip: row.role === "admin" || (row.plan === "vip" && row.status === "active" && (!row.vip_until || new Date(row.vip_until) > new Date()))
+    };
+  }
+
+  function applyPublicProfileRealtime(row) {
+    const patch = normalizePublicProfileRow(row);
+    if (!patch || String(patch.user_id) === String(state.user?.id || "")) return;
+    const id = String(patch.user_id);
+    let touched = false;
+    state.directory = state.directory.map(item => {
+      if (String(item.user_id) !== id) return item;
+      touched = true; return { ...item, ...patch };
+    });
+    state.messengerContacts = state.messengerContacts.map(item => {
+      if (String(item.peer_id) !== id) return item;
+      touched = true; return { ...item, ...patch, peer_id:item.peer_id };
+    });
+    NTS.avatar?.acceptRemote?.(patch);
+    if (touched) {
+      renderDirectory(); renderContacts(); renderMessengerPanel();
+      if (state.activePeer && String(peerId(state.activePeer)) === id) {
+        state.activePeer = { ...state.activePeer, ...patch };
+        renderChatHeader();
+      }
+      if (state.floatingWindows.has(id)) updateFloatingWindowHeader(id);
+    } else {
+      // New/previously filtered member. Lightweight resync is enough.
+      scheduleDirectoryRefresh();
+    }
+  }
+
+  function subscribePublicProfiles() {
+    closePublicProfileChannel();
+    if (!state.user || !client()) return;
+    state.publicProfileChannel = client().channel(`nts-public-profiles-${state.user.id}`)
+      .on("postgres_changes", { event:"*", schema:"public", table:"member_public_profiles" }, payload => {
+        if (payload?.eventType === "DELETE") return scheduleDirectoryRefresh();
+        applyPublicProfileRealtime(payload?.new || null);
+      })
+      .subscribe();
+  }
+
   function subscribeMessages() {
     closeMessageChannel(); if (!state.user || !client()) return;
     state.messageChannel = client().channel(`nts-global-inbox-${state.user.id}`)
@@ -810,16 +872,16 @@
       if (!state.user || document.visibilityState !== "visible") return;
       if (state.pageOpen) loadDirectory($("communityMemberSearch")?.value || "");
       loadMessengerContacts({ silent:true });
-    }, 30000);
+    }, 120000);
   }
 
   function startGlobalRealtime() {
     if (!state.user || !client()) return;
     $("messengerDock")?.classList.remove("hidden");
-    subscribeMessages(); subscribePresence(); loadMessengerContacts({ silent: true }); startAvatarRefresh();
+    subscribeMessages(); subscribePresence(); subscribePublicProfiles(); loadMessengerContacts({ silent: true }); startAvatarRefresh();
   }
   function stopGlobalRealtime() {
-    closeMessageChannel(); closePresenceChannel(); closeFriendshipChannel(); closeAllFloatingWindows(); stopAvatarRefresh();
+    closeMessageChannel(); closePresenceChannel(); closePublicProfileChannel(); closeFriendshipChannel(); closeAllFloatingWindows(); stopAvatarRefresh();
     state.messengerContacts = []; state.unread = 0; renderUnread(); toggleMessengerPanel(false); $("messengerDock")?.classList.add("hidden");
   }
   function enterCommunity() {
@@ -844,6 +906,10 @@
     // Refresh visible community surfaces so saved avatars/crops propagate immediately.
     loadDirectory($("communityMemberSearch")?.value || "");
     loadMessengerContacts({ silent: true });
+  });
+  window.addEventListener("nts:avatar-resolved", e => {
+    const member = e.detail?.member;
+    if (member?.user_id) applyPublicProfileRealtime(member);
   });
 
   window.addEventListener("nts:auth-user", e => {

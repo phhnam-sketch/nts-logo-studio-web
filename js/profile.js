@@ -22,7 +22,9 @@
     display_name: "Người dùng", bio: "", avatar_url: null, cover_url: null, updated_at: null,
     avatar_pos_x: 50, avatar_pos_y: 50, avatar_zoom: 100,
     cover_pos_x: 50, cover_pos_y: 50, cover_zoom: 100,
-    avatar_crop_version: 0, cover_crop_version: 0
+    avatar_crop_version: 0, cover_crop_version: 0,
+    avatar_object_path: null, cover_object_path: null,
+    avatar_revision: 0, cover_revision: 0
   }; }
   function brandFallback(kind) {
     const brand = cfg.BRAND || {};
@@ -218,7 +220,9 @@
       state.removeCover = false;
       render();
       if (!silent) mediaStatus("Hồ sơ đã đồng bộ. Ảnh mới sẽ hiển thị ngay sau khi lưu.", "ok");
-      await Promise.allSettled([ensureVisibleMedia("avatar"), ensureVisibleMedia("cover")]);
+      // Never block profile rendering on CDN verification. Owner sees DB/local media first;
+      // remote verification is background-only.
+      Promise.allSettled([ensureVisibleMedia("avatar"), ensureVisibleMedia("cover")]).catch(() => {});
     } catch (error) {
       console.error(error);
       toast("Không tải được hồ sơ", error.message || String(error), "error");
@@ -279,33 +283,85 @@
     try { await client().storage.from("profile-media").remove([path]); } catch (_) {}
   }
 
-  async function uploadProfileMedia(file, kind, oldUrl) {
-    const normalized = state.preparedMedia[kind]?.file === file ? state.preparedMedia[kind].normalized : await normalizeProfileImage(file, kind);
-    const path = `${state.user.id}/${kind}.jpg`;
-    mediaStatus(`Đang tải ${kind === "avatar" ? "ảnh đại diện" : "ảnh bìa"}...`, "busy");
-    const { error } = await client().storage.from("profile-media").upload(path, normalized.blob, {
-      upsert: true,
-      cacheControl: "0",
+  function makeMediaRevision() {
+    const base = Date.now() * 1000;
+    let tail = 0;
+    try {
+      const a = new Uint32Array(1); crypto.getRandomValues(a); tail = a[0] % 1000;
+    } catch (_) { tail = Math.floor(Math.random() * 1000); }
+    return base + tail;
+  }
+
+  function immutableMediaPath(kind, revision) {
+    return `${state.user.id}/${kind}/${revision}.jpg`;
+  }
+
+  async function uploadImmutableBlob(kind, blob) {
+    const revision = makeMediaRevision();
+    const path = immutableMediaPath(kind, revision);
+    const { error } = await client().storage.from("profile-media").upload(path, blob, {
+      upsert: false,
+      cacheControl: "31536000",
       contentType: "image/jpeg"
     });
-    if (error) {
-      const msg = String(error.message || error);
-      if (/row-level security|policy|bucket|mime/i.test(msg)) {
-        throw new Error("Supabase Storage đang chặn ảnh hồ sơ. Hãy chạy migration V3.2 `supabase/003_v3_2_profile_payment.sql` rồi thử lại.");
-      }
-      throw error;
-    }
+    if (error) throw error;
     const { data } = client().storage.from("profile-media").getPublicUrl(path);
     if (!data?.publicUrl) throw new Error("Upload thành công nhưng không tạo được URL ảnh.");
+    return { url: data.publicUrl, path, revision };
+  }
+
+  function runInBackground(job, label) {
+    Promise.resolve().then(job).catch(error => console.warn(label || "profile background task", error));
+  }
+
+  async function cleanupOldVersionedMedia(kind, keepPath, keep = 3) {
+    if (!state.user || !client()?.storage) return;
+    const folder = `${state.user.id}/${kind}`;
+    const { data, error } = await client().storage.from("profile-media").list(folder, {
+      limit: 100, sortBy: { column: "created_at", order: "desc" }
+    });
+    if (error || !Array.isArray(data)) return;
+    const full = data.filter(x => x?.name).map(x => `${folder}/${x.name}`);
+    const survivors = new Set([keepPath, ...full.filter(x => x !== keepPath).slice(0, Math.max(0, keep - 1))]);
+    const remove = full.filter(x => !survivors.has(x));
+    if (remove.length) await client().storage.from("profile-media").remove(remove);
+  }
+
+  function scheduleLegacyMediaCompatibility(kind, blob, sourceFile, primary) {
+    const uid = state.user?.id;
+    if (!uid) return;
+    // Compatibility files remain for all older code paths, but they no longer block Save.
+    runInBackground(async () => {
+      await uploadBlob(`${uid}/${kind}.jpg`, blob);
+    }, `legacy ${kind}.jpg sync`);
+
+    if (sourceFile) {
+      runInBackground(async () => {
+        const normalized = await normalizeProfileImage(sourceFile, kind);
+        await uploadBlob(`${uid}/${kind}-source.jpg`, normalized.blob);
+      }, `${kind} source background upload`);
+    }
+
+    runInBackground(() => cleanupOldVersionedMedia(kind, primary.path, 3), `${kind} revision cleanup`);
+  }
+
+  async function uploadProfileMedia(file, kind, oldUrl) {
+    const normalized = state.preparedMedia[kind]?.file === file ? state.preparedMedia[kind].normalized : await normalizeProfileImage(file, kind);
+    mediaStatus(`Đang tải ${kind === "avatar" ? "ảnh đại diện" : "ảnh bìa"}...`, "busy");
+    const primary = await uploadImmutableBlob(kind, normalized.blob);
     if (oldUrl) {
       const oldPath = storagePathFromPublicUrl(oldUrl);
-      if (oldPath && oldPath !== path) await removeStoredPath(oldUrl);
+      // Never synchronously delete the previous image; existing sessions may still be reading it.
+      if (oldPath && oldPath !== primary.path && !oldPath.includes(`/${kind}/`)) {
+        runInBackground(() => removeStoredPath(oldUrl), `${kind} old legacy cleanup`);
+      }
     }
-    // Keep an immediate local copy until the CDN/public URL has been verified.
     revokeUrl("previewUrls", kind);
     state.previewUrls[kind] = URL.createObjectURL(normalized.blob);
-    return cacheBust(data.publicUrl, Date.now());
+    scheduleLegacyMediaCompatibility(kind, normalized.blob, null, primary);
+    return primary;
   }
+
 
 
   function canonicalMediaUrl(kind, stamp = Date.now()) {
@@ -357,21 +413,21 @@
     if (!(cropBlob instanceof Blob)) throw new Error("Không tạo được dữ liệu ảnh sau khi cắt.");
     if (state.saving) throw new Error("Hồ sơ đang được lưu. Vui lòng đợi một chút.");
     state.saving = true;
-    const path = `${state.user.id}/${kind}.jpg`;
-    const sourcePath = `${state.user.id}/${kind}-source.jpg`;
+    const previousRuntime = state.runtimeUrls[kind];
+    const optimisticUrl = URL.createObjectURL(cropBlob);
+    state.runtimeUrls[kind] = optimisticUrl;
+    render();
     try {
-      mediaStatus(`Đang cập nhật ${kind === "avatar" ? "ảnh đại diện" : "ảnh bìa"}...`, "busy");
-      const jobs = [uploadBlob(path, cropBlob)];
-      if (sourceFile) {
-        const normalized = await normalizeProfileImage(sourceFile, kind);
-        jobs.push(uploadBlob(sourcePath, normalized.blob));
-      }
-      await Promise.all(jobs);
-      const { data: publicData } = client().storage.from("profile-media").getPublicUrl(path);
-      if (!publicData?.publicUrl) throw new Error("Không tạo được URL ảnh sau khi tải lên.");
+      mediaStatus(`Ảnh đã hiển thị ngay. Đang đồng bộ ${kind === "avatar" ? "avatar" : "ảnh bìa"} lên máy chủ...`, "busy");
+
+      // Critical path is intentionally tiny: upload FINAL cropped pixels to a UNIQUE URL,
+      // update DB, render. Source/canonical/auth metadata sync continue in background.
+      const primary = await uploadImmutableBlob(kind, cropBlob);
       const prefix = kind === "avatar" ? "avatar" : "cover";
       const payload = {
-        [`${prefix}_url`]: publicData.publicUrl,
+        [`${prefix}_url`]: primary.url,
+        [`${prefix}_object_path`]: primary.path,
+        [`${prefix}_revision`]: primary.revision,
         [`${prefix}_pos_x`]: clamp(crop?.x, 0, 100, 50),
         [`${prefix}_pos_y`]: clamp(crop?.y, 0, 100, 50),
         [`${prefix}_zoom`]: clamp(crop?.zoom, 100, 500, 100),
@@ -379,31 +435,57 @@
       };
       const { data, error } = await client().from("profiles").update(payload).eq("id", state.user.id).select("*").single();
       if (error) throw error;
+
       state.profile = { ...defaults(), ...data };
-      revokeUrl("runtimeUrls", kind);
-      revokeUrl("previewUrls", kind);
-      state.runtimeUrls[kind] = URL.createObjectURL(cropBlob);
-      if (kind === "avatar") {
-        try {
-          const authResult = await client().auth.updateUser({ data: { avatar_url: publicData.publicUrl } });
-          if (authResult?.error) console.warn("avatar metadata sync", authResult.error);
-        } catch (error) { console.warn("avatar metadata sync", error); }
-        NTS.avatar?.invalidate?.(state.user.id);
+      if (previousRuntime && previousRuntime !== optimisticUrl && /^blob:/i.test(previousRuntime)) {
+        try { URL.revokeObjectURL(previousRuntime); } catch (_) {}
       }
+      revokeUrl("previewUrls", kind);
+      state.runtimeUrls[kind] = optimisticUrl;
       render();
-      mediaStatus("Ảnh đã lưu và đồng bộ ngay trên giao diện.", "ok");
+      mediaStatus("Ảnh đã cập nhật tức thì. Đang đồng bộ bản tương thích ở nền...", "ok");
+
+      if (kind === "avatar") {
+        NTS.avatar?.publishLocal?.(state.user.id, {
+          user_id: state.user.id,
+          display_name: state.profile.display_name,
+          avatar_url: primary.url,
+          avatar_storage_path: primary.path,
+          avatar_storage_version: new Date().toISOString(),
+          avatar_revision: primary.revision,
+          role: NTS.membership?.state?.account?.role || "member",
+          plan: NTS.membership?.state?.account?.plan || "free"
+        });
+      }
       window.dispatchEvent(new CustomEvent("nts:profile-saved", { detail: { profile: state.profile, kind } }));
-      // CDN verification is intentionally background-only; the UI already shows the local crop.
-      Promise.resolve().then(async () => {
-        try {
-          const remote = cacheBust(publicData.publicUrl, state.profile.updated_at || Date.now());
-          await imageLoads(remote);
-          revokeUrl("runtimeUrls", kind);
+      window.dispatchEvent(new CustomEvent("nts:avatar-updated", { detail: { userId: state.user.id, profile: state.profile, kind, url: primary.url, path: primary.path, revision: primary.revision } }));
+
+      scheduleLegacyMediaCompatibility(kind, cropBlob, sourceFile, primary);
+
+      if (kind === "avatar") {
+        runInBackground(async () => {
+          const authResult = await client().auth.updateUser({ data: { avatar_url: primary.url } });
+          if (authResult?.error) throw authResult.error;
+        }, "avatar auth metadata background sync");
+      }
+
+      // No blocking CDN verification: immutable URL means no overwritten-object cache wait.
+      // Release the optimistic blob only after the immutable URL is really reachable.
+      runInBackground(async () => {
+        await imageLoads(primary.url);
+        if (state.runtimeUrls[kind] === optimisticUrl) {
+          try { URL.revokeObjectURL(optimisticUrl); } catch (_) {}
+          state.runtimeUrls[kind] = null;
           render();
-        } catch (_) {}
-      });
+        }
+      }, `${kind} immutable URL verification`);
       return state.profile;
     } catch (error) {
+      if (state.runtimeUrls[kind] === optimisticUrl) {
+        try { URL.revokeObjectURL(optimisticUrl); } catch (_) {}
+        state.runtimeUrls[kind] = previousRuntime || null;
+        render();
+      }
       const message = String(error?.message || error);
       if (/row-level security|policy|bucket|mime/i.test(message)) {
         throw new Error("Supabase Storage đang chặn ảnh hồ sơ. Kiểm tra bucket profile-media và policy upload/update của chính người dùng.");
@@ -412,12 +494,19 @@
     } finally { state.saving = false; }
   }
 
+
   async function removeMedia(kind) {
     if (!state.user || !client()) return;
     const prefix = kind === "avatar" ? "avatar" : "cover";
     const paths = [`${state.user.id}/${kind}.jpg`, `${state.user.id}/${kind}-source.jpg`];
     await Promise.allSettled(paths.map(path => client().storage.from("profile-media").remove([path])));
-    const payload = { [`${prefix}_url`]: null, [`${prefix}_pos_x`]:50, [`${prefix}_pos_y`]:50, [`${prefix}_zoom`]:100, [`${prefix}_crop_version`]:0 };
+    runInBackground(async () => {
+      const folder = `${state.user.id}/${kind}`;
+      const { data } = await client().storage.from("profile-media").list(folder, { limit:100 });
+      const extra = Array.isArray(data) ? data.filter(x => x?.name).map(x => `${folder}/${x.name}`) : [];
+      if (extra.length) await client().storage.from("profile-media").remove(extra);
+    }, `${kind} remove versioned media`);
+    const payload = { [`${prefix}_url`]: null, [`${prefix}_object_path`]: null, [`${prefix}_revision`]: makeMediaRevision(), [`${prefix}_pos_x`]:50, [`${prefix}_pos_y`]:50, [`${prefix}_zoom`]:100, [`${prefix}_crop_version`]:0 };
     const { data, error } = await client().from("profiles").update(payload).eq("id", state.user.id).select("*").single();
     if (error) throw error;
     state.profile = { ...defaults(), ...data };
@@ -455,14 +544,16 @@
 
       mediaStatus("Đang lưu ảnh và vị trí...", "busy");
       const [avatarResult, coverResult] = await Promise.all([
-        avatarFile ? uploadProfileMedia(avatarFile, "avatar", state.profile?.avatar_url) : Promise.resolve(avatarUrl),
-        coverFile ? uploadProfileMedia(coverFile, "cover", state.profile?.cover_url) : Promise.resolve(coverUrl)
+        avatarFile ? uploadProfileMedia(avatarFile, "avatar", state.profile?.avatar_url) : Promise.resolve({ url: avatarUrl, path: state.profile?.avatar_object_path || null, revision: state.profile?.avatar_revision || 0 }),
+        coverFile ? uploadProfileMedia(coverFile, "cover", state.profile?.cover_url) : Promise.resolve({ url: coverUrl, path: state.profile?.cover_object_path || null, revision: state.profile?.cover_revision || 0 })
       ]);
-      avatarUrl = avatarResult; coverUrl = coverResult;
+      avatarUrl = avatarResult?.url ?? avatarUrl; coverUrl = coverResult?.url ?? coverUrl;
 
       const a = mediaAdjust("avatar"), c = mediaAdjust("cover");
       const payload = {
         display_name: displayName, bio, avatar_url: avatarUrl, cover_url: coverUrl,
+        avatar_object_path: avatarResult?.path || null, cover_object_path: coverResult?.path || null,
+        avatar_revision: avatarResult?.revision || state.profile?.avatar_revision || 0, cover_revision: coverResult?.revision || state.profile?.cover_revision || 0,
         avatar_pos_x: a.x, avatar_pos_y: a.y, avatar_zoom: a.zoom,
         cover_pos_x: c.x, cover_pos_y: c.y, cover_zoom: c.zoom
       };
@@ -472,10 +563,14 @@
       state.profile = { ...defaults(), ...data };
       render(); // immediate: local normalized blob is already visible here.
 
-      try {
+      runInBackground(async () => {
         const authResult = await client().auth.updateUser({ data: { display_name: displayName, avatar_url: avatarUrl || null } });
-        if (authResult?.error) console.warn("auth avatar metadata sync", authResult.error);
-      } catch (authSyncError) { console.warn("auth avatar metadata sync", authSyncError); }
+        if (authResult?.error) throw authResult.error;
+      }, "auth profile metadata background sync");
+      if (avatarResult?.url) {
+        NTS.avatar?.publishLocal?.(state.user.id, { user_id:state.user.id, display_name:displayName, avatar_url:avatarResult.url, avatar_storage_path:avatarResult.path, avatar_revision:avatarResult.revision });
+        window.dispatchEvent(new CustomEvent("nts:avatar-updated", { detail: { userId:state.user.id, profile:state.profile, kind:"avatar", url:avatarResult.url, path:avatarResult.path, revision:avatarResult.revision } }));
+      }
       if ($("profileAvatarInput")) $("profileAvatarInput").value = "";
       if ($("profileCoverInput")) $("profileCoverInput").value = "";
       state.removeAvatar = false; state.removeCover = false;
