@@ -192,6 +192,9 @@
       renderDirectory();
       renderRequests();
       renderContacts();
+      // V3.14: resolve the exact Storage avatar for every visible member in one batch.
+      // UI renders immediately; resolved images replace fallbacks asynchronously.
+      NTS.avatar?.hydrateMembers?.(state.directory).catch?.(() => {});
     } catch (error) {
       console.error("community directory", error);
       if ($("communityMemberList")) $("communityMemberList").innerHTML = `<div class="v37-empty-state">Không tải được danh bạ: ${escapeHtml(error?.message || "Kiểm tra migration 005.")}</div>`;
@@ -208,6 +211,8 @@
       renderUnread();
       renderMessengerPanel();
       renderContacts();
+      // Same Avatar Hub powers chat list, quick Messenger and floating chat windows.
+      NTS.avatar?.hydrateMembers?.(state.messengerContacts).catch?.(() => {});
     } catch (error) {
       if (!silent) console.error("messenger contacts", error);
       // Migration 006 may not be installed yet. Fall back to existing directory/unread behavior.
@@ -601,6 +606,7 @@
       avatar_storage_path: row.avatar_object_path || row.avatar_storage_path || null,
       avatar_storage_version: row.avatar_updated_at || row.updated_at || null,
       avatar_revision: Number(row.avatar_revision || 0),
+      avatar_crop_version: Number(row.avatar_crop_version || 0),
       role: row.role || "member",
       plan: row.plan || "free",
       is_vip: row.role === "admin" || (row.plan === "vip" && row.status === "active" && (!row.vip_until || new Date(row.vip_until) > new Date()))
