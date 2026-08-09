@@ -30,7 +30,8 @@
     messengerPanelOpen: false,
     floatingWindows: new Map(),
     windowOrder: [],
-    incomingPreviewTimer: null
+    incomingPreviewTimer: null,
+    avatarRefreshTimer: null
   };
 
   function roleLabel(member) { return NTS.avatar?.roleLabel?.(member) || (member?.role === "admin" ? "ADMIN" : member?.is_vip ? "VIP" : "FREE"); }
@@ -107,11 +108,20 @@
   }
 
   async function rpcWithFallback(primary, fallback, args) {
-    const first = await client().rpc(primary, args);
-    if (!first.error) return first;
-    const message = String(first.error?.message || "");
-    if (!/function|schema cache|does not exist|PGRST202/i.test(message)) return first;
-    return client().rpc(fallback, args);
+    return rpcCascade([primary, fallback].filter(Boolean), args);
+  }
+
+  async function rpcCascade(names, args) {
+    let last = { data:null, error:new Error("RPC_NOT_AVAILABLE") };
+    for (const name of names) {
+      if (!name) continue;
+      const result = await client().rpc(name, args);
+      last = result;
+      if (!result?.error) return result;
+      const message = String(result.error?.message || "");
+      if (!/function|schema cache|does not exist|PGRST202/i.test(message)) return result;
+    }
+    return last;
   }
 
   async function safeRpc(name, args, { silent = true } = {}) {
@@ -142,7 +152,12 @@
     frame.className = "v310-avatar-frame";
     const img = document.createElement("img");
     img.alt = member?.display_name ? `Ảnh đại diện ${member.display_name}` : "Ảnh đại diện";
-    NTS.avatar?.bindImage?.(img, member);
+    if (NTS.avatar?.bindImage) NTS.avatar.bindImage(img, member);
+    else {
+      const direct = member?.avatar_url || storageAvatarUrl(member) || fallbackAvatar();
+      img.src = addAvatarVersion(direct, member?.avatar_storage_version || member?.avatar_version || Date.now());
+      img.onerror = () => { img.onerror = null; img.src = fallbackAvatar(); };
+    }
     if (Number(member?.avatar_crop_version || 0) >= 1) img.dataset.v311Final = "1";
     frame.append(img);
     const badge = document.createElement("span");
@@ -170,7 +185,7 @@
   async function loadDirectory(search = "") {
     if (!state.user || !client()) return;
     try {
-      const { data, error } = await rpcWithFallback("list_member_directory_v311", "list_member_directory_v310", { p_search: search.trim(), p_limit: 60 });
+      const { data, error } = await rpcCascade(["list_member_directory_v312","list_member_directory_v311","list_member_directory_v310"], { p_search: search.trim(), p_limit: 60 });
       if (error) throw error;
       state.directory = Array.isArray(data) ? data : [];
       renderDirectory();
@@ -185,7 +200,7 @@
   async function loadMessengerContacts({ silent = false } = {}) {
     if (!state.user || !client()) return;
     try {
-      const { data, error } = await rpcWithFallback("list_messenger_contacts_v311", "list_messenger_contacts_v310", { p_limit: 60 });
+      const { data, error } = await rpcCascade(["list_messenger_contacts_v312","list_messenger_contacts_v311","list_messenger_contacts_v310"], { p_limit: 60 });
       if (error) throw error;
       state.messengerContacts = Array.isArray(data) ? data : [];
       state.unread = state.messengerContacts.reduce((sum, x) => sum + Number(x.unread_count || 0), 0);
@@ -333,7 +348,7 @@
   async function getMemberPublic(id) {
     const found = findMember(id); if (found) return found;
     try {
-      const { data, error } = await rpcWithFallback("get_member_public_profile_v311", "get_member_public_profile_v310", { p_user: id });
+      const { data, error } = await rpcCascade(["get_member_public_profile_v312","get_member_public_profile_v311","get_member_public_profile_v310"], { p_user: id });
       if (error) throw error;
       const row = Array.isArray(data) ? data[0] : data;
       return row ? normalizeContact({ ...row, peer_id: row.user_id }) : null;
@@ -786,13 +801,25 @@
     state.friendshipChannel = client().channel(`nts-friends-${state.user.id}`).on("postgres_changes", { event: "*", schema: "public", table: "friendships" }, scheduleDirectoryRefresh).subscribe();
   }
 
+  function stopAvatarRefresh() {
+    clearInterval(state.avatarRefreshTimer); state.avatarRefreshTimer = null;
+  }
+  function startAvatarRefresh() {
+    stopAvatarRefresh();
+    state.avatarRefreshTimer = setInterval(() => {
+      if (!state.user || document.visibilityState !== "visible") return;
+      if (state.pageOpen) loadDirectory($("communityMemberSearch")?.value || "");
+      loadMessengerContacts({ silent:true });
+    }, 30000);
+  }
+
   function startGlobalRealtime() {
     if (!state.user || !client()) return;
     $("messengerDock")?.classList.remove("hidden");
-    subscribeMessages(); subscribePresence(); loadMessengerContacts({ silent: true });
+    subscribeMessages(); subscribePresence(); loadMessengerContacts({ silent: true }); startAvatarRefresh();
   }
   function stopGlobalRealtime() {
-    closeMessageChannel(); closePresenceChannel(); closeFriendshipChannel(); closeAllFloatingWindows();
+    closeMessageChannel(); closePresenceChannel(); closeFriendshipChannel(); closeAllFloatingWindows(); stopAvatarRefresh();
     state.messengerContacts = []; state.unread = 0; renderUnread(); toggleMessengerPanel(false); $("messengerDock")?.classList.add("hidden");
   }
   function enterCommunity() {
@@ -828,6 +855,11 @@
   window.addEventListener("beforeunload", () => stopGlobalRealtime());
 
 
+  window.addEventListener("visibilitychange", () => {
+    if (!state.user || document.visibilityState !== "visible") return;
+    if (state.pageOpen) loadDirectory($("communityMemberSearch")?.value || "");
+    loadMessengerContacts({ silent:true });
+  });
   window.addEventListener("online", () => { if (state.user) startGlobalRealtime(); });
 
   if (NTS.currentUser) { state.user = NTS.currentUser; startGlobalRealtime(); }
