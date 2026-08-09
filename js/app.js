@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  // V3.2: orientation-aware Smart Apply + direct-source watermark rendering + HiDPI preview + functional zoom/Fit.
+  // V3.2.1: precision margins X/Y + orientation-aware Smart Apply + direct-source watermark rendering + HiDPI preview + functional zoom/Fit.
 
   const $ = (id) => document.getElementById(id);
   const toast = (title, message, kind = "info", duration) => window.NTS?.showToast?.(title, message, kind, duration);
@@ -53,12 +53,18 @@
       pos: "SE",
       opacity: 92,
       size: 18,
+      // Legacy uniform padding is preserved for backward compatibility.
       padding: 28,
+      // V3.2.1: horizontal/vertical edge margins are independent.
+      paddingX: 28,
+      paddingY: 28,
       offsetX: 0,
       offsetY: 0,
       rotation: 0,
       keepInside: true,
       paddingRatio: null,
+      paddingXRatio: null,
+      paddingYRatio: null,
       offsetXRatio: null,
       offsetYRatio: null,
       referenceWidth: null,
@@ -101,13 +107,21 @@
     positionGrid: $("positionGrid"),
     opacityRange: $("opacityRange"),
     sizeRange: $("sizeRange"),
-    paddingRange: $("paddingRange"),
+    paddingRange: $("paddingRange"), // legacy hidden compatibility control, if present
+    paddingXRange: $("paddingXRange"),
+    paddingYRange: $("paddingYRange"),
+    paddingXNumber: $("paddingXNumber"),
+    paddingYNumber: $("paddingYNumber"),
     offsetXRange: $("offsetXRange"),
     offsetYRange: $("offsetYRange"),
+    offsetXNumber: $("offsetXNumber"),
+    offsetYNumber: $("offsetYNumber"),
     rotationRange: $("rotationRange"),
     opacityValue: $("opacityValue"),
     sizeValue: $("sizeValue"),
-    paddingValue: $("paddingValue"),
+    paddingValue: $("paddingValue"), // legacy label, if present
+    paddingXValue: $("paddingXValue"),
+    paddingYValue: $("paddingYValue"),
     offsetXValue: $("offsetXValue"),
     offsetYValue: $("offsetYValue"),
     rotationValue: $("rotationValue"),
@@ -159,15 +173,46 @@
     return Number.isFinite(Number(value)) && Number(value) > 0;
   }
 
-  function captureRelativeSettings(settings = state.settings, item = currentItem()) {
+  function hasFiniteNumber(value) {
+    return value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value));
+  }
+
+  function finiteNumber(value, fallback = 0) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+  }
+
+  // Accept every settings object produced by V2/V3/V3.1/V3.2 without dropping fields.
+  // Old `padding` is mapped to both axes; V3.2.1 stores paddingX/paddingY independently.
+  function normalizeSettingsShape(settings = {}) {
     const out = cloneSettings(settings);
+    const legacyPadding = finiteNumber(out.padding, 28);
+    if (!hasFiniteNumber(out.paddingX)) out.paddingX = legacyPadding;
+    if (!hasFiniteNumber(out.paddingY)) out.paddingY = legacyPadding;
+    out.paddingX = Math.max(0, finiteNumber(out.paddingX, legacyPadding));
+    out.paddingY = Math.max(0, finiteNumber(out.paddingY, legacyPadding));
+    out.offsetX = finiteNumber(out.offsetX, 0);
+    out.offsetY = finiteNumber(out.offsetY, 0);
+    out.opacity = Math.max(0, Math.min(100, finiteNumber(out.opacity, 92)));
+    out.size = Math.max(2, Math.min(80, finiteNumber(out.size, 18)));
+    out.rotation = Math.max(-180, Math.min(180, finiteNumber(out.rotation, 0)));
+    // Preserve the legacy field so older code/config snapshots remain readable.
+    out.padding = Math.round((out.paddingX + out.paddingY) / 2);
+    return out;
+  }
+
+  function captureRelativeSettings(settings = state.settings, item = currentItem()) {
+    const out = normalizeSettingsShape(settings);
     const width = Number(item?.width || (state.currentBitmapId === item?.id ? state.currentBitmap?.width : 0));
     const height = Number(item?.height || (state.currentBitmapId === item?.id ? state.currentBitmap?.height : 0));
     if (validDimension(width) && validDimension(height)) {
       const shortSide = Math.min(width, height);
-      out.paddingRatio = Number(out.padding || 0) / shortSide;
-      out.offsetXRatio = Number(out.offsetX || 0) / width;
-      out.offsetYRatio = Number(out.offsetY || 0) / height;
+      // Keep legacy ratio for old snapshots, while the new ratios are axis-aware.
+      out.paddingRatio = finiteNumber(out.padding, 0) / shortSide;
+      out.paddingXRatio = finiteNumber(out.paddingX, 0) / width;
+      out.paddingYRatio = finiteNumber(out.paddingY, 0) / height;
+      out.offsetXRatio = finiteNumber(out.offsetX, 0) / width;
+      out.offsetYRatio = finiteNumber(out.offsetY, 0) / height;
       out.referenceWidth = width;
       out.referenceHeight = height;
       out.referenceShortSide = shortSide;
@@ -176,15 +221,28 @@
   }
 
   function materializeSettings(settings, width, height) {
-    const out = cloneSettings(settings);
+    const out = normalizeSettingsShape(settings);
     if (!validDimension(width) || !validDimension(height)) return out;
     const shortSide = Math.min(width, height);
-    if (Number.isFinite(Number(out.paddingRatio))) out.padding = Math.round(Number(out.paddingRatio) * shortSide);
-    else if (validDimension(out.referenceShortSide)) out.padding = Math.round(Number(out.padding || 0) * shortSide / Number(out.referenceShortSide));
-    if (Number.isFinite(Number(out.offsetXRatio))) out.offsetX = Math.round(Number(out.offsetXRatio) * width);
-    else if (validDimension(out.referenceWidth)) out.offsetX = Math.round(Number(out.offsetX || 0) * width / Number(out.referenceWidth));
-    if (Number.isFinite(Number(out.offsetYRatio))) out.offsetY = Math.round(Number(out.offsetYRatio) * height);
-    else if (validDimension(out.referenceHeight)) out.offsetY = Math.round(Number(out.offsetY || 0) * height / Number(out.referenceHeight));
+
+    // V3.2.1: margin X follows image width, margin Y follows image height.
+    // This is what keeps the visual spacing consistent when switching landscape <-> portrait.
+    if (hasFiniteNumber(out.paddingXRatio)) out.paddingX = Math.round(Number(out.paddingXRatio) * width);
+    else if (hasFiniteNumber(out.paddingRatio)) out.paddingX = Math.round(Number(out.paddingRatio) * shortSide);
+    else if (validDimension(out.referenceWidth)) out.paddingX = Math.round(finiteNumber(out.paddingX, out.padding) * width / Number(out.referenceWidth));
+
+    if (hasFiniteNumber(out.paddingYRatio)) out.paddingY = Math.round(Number(out.paddingYRatio) * height);
+    else if (hasFiniteNumber(out.paddingRatio)) out.paddingY = Math.round(Number(out.paddingRatio) * shortSide);
+    else if (validDimension(out.referenceHeight)) out.paddingY = Math.round(finiteNumber(out.paddingY, out.padding) * height / Number(out.referenceHeight));
+
+    if (hasFiniteNumber(out.offsetXRatio)) out.offsetX = Math.round(Number(out.offsetXRatio) * width);
+    else if (validDimension(out.referenceWidth)) out.offsetX = Math.round(finiteNumber(out.offsetX, 0) * width / Number(out.referenceWidth));
+    if (hasFiniteNumber(out.offsetYRatio)) out.offsetY = Math.round(Number(out.offsetYRatio) * height);
+    else if (validDimension(out.referenceHeight)) out.offsetY = Math.round(finiteNumber(out.offsetY, 0) * height / Number(out.referenceHeight));
+
+    out.paddingX = Math.max(0, out.paddingX);
+    out.paddingY = Math.max(0, out.paddingY);
+    out.padding = Math.round((out.paddingX + out.paddingY) / 2);
     out.referenceWidth = width;
     out.referenceHeight = height;
     out.referenceShortSide = shortSide;
@@ -196,13 +254,39 @@
     if (item) item.settings = captureRelativeSettings(state.settings, item);
   }
 
+  function updatePrecisionBounds() {
+    const item = currentItem();
+    const w = finiteNumber(item?.width || state.currentBitmap?.width, 0);
+    const h = finiteNumber(item?.height || state.currentBitmap?.height, 0);
+    const xMarginMax = w > 0 ? Math.max(100, Math.round(w * 0.48)) : 3000;
+    const yMarginMax = h > 0 ? Math.max(100, Math.round(h * 0.48)) : 3000;
+    const xOffsetMax = w > 0 ? Math.max(100, Math.round(w * 0.5)) : 3000;
+    const yOffsetMax = h > 0 ? Math.max(100, Math.round(h * 0.5)) : 3000;
+    if (els.paddingXRange) els.paddingXRange.max = String(xMarginMax);
+    if (els.paddingYRange) els.paddingYRange.max = String(yMarginMax);
+    if (els.paddingXNumber) els.paddingXNumber.max = String(xMarginMax);
+    if (els.paddingYNumber) els.paddingYNumber.max = String(yMarginMax);
+    if (els.offsetXRange) { els.offsetXRange.min = String(-xOffsetMax); els.offsetXRange.max = String(xOffsetMax); }
+    if (els.offsetYRange) { els.offsetYRange.min = String(-yOffsetMax); els.offsetYRange.max = String(yOffsetMax); }
+    if (els.offsetXNumber) { els.offsetXNumber.min = String(-xOffsetMax); els.offsetXNumber.max = String(xOffsetMax); }
+    if (els.offsetYNumber) { els.offsetYNumber.min = String(-yOffsetMax); els.offsetYNumber.max = String(yOffsetMax); }
+  }
+
   function syncSettingsControls() {
     if (!els.opacityRange) return;
+    state.settings = normalizeSettingsShape(state.settings);
+    updatePrecisionBounds();
     els.opacityRange.value = String(state.settings.opacity);
     els.sizeRange.value = String(state.settings.size);
-    els.paddingRange.value = String(state.settings.padding);
+    if (els.paddingRange) els.paddingRange.value = String(state.settings.padding);
+    if (els.paddingXRange) els.paddingXRange.value = String(state.settings.paddingX);
+    if (els.paddingYRange) els.paddingYRange.value = String(state.settings.paddingY);
+    if (els.paddingXNumber) els.paddingXNumber.value = String(state.settings.paddingX);
+    if (els.paddingYNumber) els.paddingYNumber.value = String(state.settings.paddingY);
     els.offsetXRange.value = String(state.settings.offsetX);
     els.offsetYRange.value = String(state.settings.offsetY);
+    if (els.offsetXNumber) els.offsetXNumber.value = String(state.settings.offsetX);
+    if (els.offsetYNumber) els.offsetYNumber.value = String(state.settings.offsetY);
     els.rotationRange.value = String(state.settings.rotation);
     els.keepInsideToggle.checked = Boolean(state.settings.keepInside);
     els.positionGrid.querySelectorAll("button[data-pos]").forEach((b) => b.classList.toggle("active", b.dataset.pos === state.settings.pos));
@@ -210,7 +294,7 @@
   }
 
   function setSettings(settings, item = currentItem()) {
-    let next = cloneSettings(settings);
+    let next = normalizeSettingsShape(settings);
     if (item && validDimension(item.width) && validDimension(item.height)) next = materializeSettings(next, item.width, item.height);
     state.settings = next;
     syncSettingsControls();
@@ -481,17 +565,18 @@
   }
 
   function watermarkPosition(imgX, imgY, imgW, imgH, logoW, logoH, scaleFromSource, settings = state.settings) {
-    const s = settings;
-    const padding = s.padding * scaleFromSource;
+    const s = normalizeSettingsShape(settings);
+    const paddingX = s.paddingX * scaleFromSource;
+    const paddingY = s.paddingY * scaleFromSource;
     const offsetX = s.offsetX * scaleFromSource;
     const offsetY = s.offsetY * scaleFromSource;
     let x = imgX + (imgW - logoW) / 2;
     let y = imgY + (imgH - logoH) / 2;
 
-    if (s.pos.includes("W")) x = imgX + padding;
-    else if (s.pos.includes("E")) x = imgX + imgW - logoW - padding;
-    if (s.pos.includes("N")) y = imgY + padding;
-    else if (s.pos.includes("S")) y = imgY + imgH - logoH - padding;
+    if (s.pos.includes("W")) x = imgX + paddingX;
+    else if (s.pos.includes("E")) x = imgX + imgW - logoW - paddingX;
+    if (s.pos.includes("N")) y = imgY + paddingY;
+    else if (s.pos.includes("S")) y = imgY + imgH - logoH - paddingY;
 
     x += offsetX;
     y += offsetY;
@@ -637,29 +722,67 @@
   });
 
   function syncControlLabels() {
+    state.settings = normalizeSettingsShape(state.settings);
     els.opacityValue.textContent = `${state.settings.opacity}%`;
     els.sizeValue.textContent = `${state.settings.size}%`;
-    els.paddingValue.textContent = `${state.settings.padding} px`;
+    if (els.paddingValue) els.paddingValue.textContent = `${state.settings.padding} px`;
+    if (els.paddingXValue) els.paddingXValue.textContent = `${state.settings.paddingX} px`;
+    if (els.paddingYValue) els.paddingYValue.textContent = `${state.settings.paddingY} px`;
     els.offsetXValue.textContent = `${state.settings.offsetX} px`;
     els.offsetYValue.textContent = `${state.settings.offsetY} px`;
     els.rotationValue.textContent = `${state.settings.rotation}°`;
   }
 
+  function commitPrecisionSetting(key, rawValue, { min = -Infinity, max = Infinity } = {}) {
+    const value = Math.max(min, Math.min(max, Math.round(finiteNumber(rawValue, state.settings[key] ?? 0))));
+    state.settings[key] = value;
+    if (key === "paddingX" || key === "paddingY") {
+      state.settings.padding = Math.round((finiteNumber(state.settings.paddingX, 0) + finiteNumber(state.settings.paddingY, 0)) / 2);
+    }
+    updateCurrentItemSettings();
+    syncSettingsControls();
+    schedulePreview();
+  }
+
   function bindRange(input, key) {
+    if (!input) return;
     input.addEventListener("input", () => {
       state.settings[key] = Number(input.value);
+      if (key === "paddingX" || key === "paddingY") {
+        state.settings.padding = Math.round((finiteNumber(state.settings.paddingX, 0) + finiteNumber(state.settings.paddingY, 0)) / 2);
+      }
       updateCurrentItemSettings();
       syncControlLabels();
+      const numberEl = key === "paddingX" ? els.paddingXNumber : key === "paddingY" ? els.paddingYNumber : key === "offsetX" ? els.offsetXNumber : key === "offsetY" ? els.offsetYNumber : null;
+      if (numberEl) numberEl.value = String(state.settings[key]);
       schedulePreview();
+    });
+  }
+
+  function bindNumber(numberInput, rangeInput, key, min = -Infinity) {
+    if (!numberInput) return;
+    const apply = () => {
+      const max = Number.isFinite(Number(numberInput.max)) ? Number(numberInput.max) : Infinity;
+      commitPrecisionSetting(key, numberInput.value, { min, max });
+      if (rangeInput) rangeInput.value = String(state.settings[key]);
+    };
+    numberInput.addEventListener("change", apply);
+    numberInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") { event.preventDefault(); apply(); numberInput.blur(); }
     });
   }
 
   bindRange(els.opacityRange, "opacity");
   bindRange(els.sizeRange, "size");
-  bindRange(els.paddingRange, "padding");
+  bindRange(els.paddingXRange, "paddingX");
+  bindRange(els.paddingYRange, "paddingY");
   bindRange(els.offsetXRange, "offsetX");
   bindRange(els.offsetYRange, "offsetY");
   bindRange(els.rotationRange, "rotation");
+  bindNumber(els.paddingXNumber, els.paddingXRange, "paddingX", 0);
+  bindNumber(els.paddingYNumber, els.paddingYRange, "paddingY", 0);
+  bindNumber(els.offsetXNumber, els.offsetXRange, "offsetX");
+  bindNumber(els.offsetYNumber, els.offsetYRange, "offsetY");
 
   els.keepInsideToggle.addEventListener("change", () => {
     state.settings.keepInside = els.keepInsideToggle.checked;
@@ -697,6 +820,28 @@
     syncControlLabels();
     schedulePreview();
     toast("Đã reset transform", "X, Y và góc xoay đã trở về mặc định.", "success");
+  });
+
+  $("resetMargins")?.addEventListener("click", () => {
+    state.settings.paddingX = 28;
+    state.settings.paddingY = 28;
+    state.settings.padding = 28;
+    updateCurrentItemSettings();
+    syncSettingsControls();
+    schedulePreview();
+    toast("Đã reset lề", "Lề ngang và lề dọc đã trở về 28 px.", "success", 2600);
+  });
+
+  document.querySelectorAll("[data-nudge]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const [axis, deltaRaw] = String(button.dataset.nudge || "").split(":");
+      const delta = finiteNumber(deltaRaw, 0);
+      const key = axis === "x" ? "offsetX" : axis === "y" ? "offsetY" : null;
+      if (!key) return;
+      const input = key === "offsetX" ? els.offsetXNumber : els.offsetYNumber;
+      const max = Number.isFinite(Number(input?.max)) ? Number(input.max) : 3000;
+      commitPrecisionSetting(key, finiteNumber(state.settings[key], 0) + delta, { min: -max, max });
+    });
   });
 
   els.imageInput.addEventListener("change", () => {
@@ -817,7 +962,7 @@
         : cloneSettings(snapshot);
     });
     if (master) master.settings = materializeSettings(snapshot, master.width || snapshot.referenceWidth, master.height || snapshot.referenceHeight);
-    toast("Smart Apply hoàn tất", `${items.length} ảnh đã được đồng bộ theo tỷ lệ riêng của từng khung ngang/dọc. X/Y theo chiều ảnh, lề theo cạnh ngắn.`, "success", 5600);
+    toast("Smart Apply hoàn tất", `${items.length} ảnh đã được đồng bộ theo tỷ lệ riêng của từng khung ngang/dọc. X theo chiều rộng, Y theo chiều cao; lề ngang theo chiều rộng và lề dọc theo chiều cao.`, "success", 5600);
     label?.();
   }
 

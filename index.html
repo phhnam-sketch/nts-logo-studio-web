@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#711A37" />
   <meta name="description" content="NTS Logo Studio Pro Web - công cụ đóng dấu ảnh trực quan với tài khoản người dùng." />
-  <title>NAM TIÊN SINH LOGO</title>
+  <title>NTS Logo Studio Pro Web</title>
   <link rel="icon" href="assets/brand/logo.png" type="image/png" />
   <link rel="stylesheet" href="assets/styles.css" />
 </head>
@@ -17,8 +17,8 @@
       <div class="brand-lockup">
         <img class="brand-logo-image" src="assets/brand/logo.png" alt="NTS" />
         <div>
-          <div class="brand-name">LOGO STUDIO PRO</div>
-          <div class="brand-version">WEB EDITION</div>
+          <div class="brand-name">NTS STUDIO</div>
+          <div class="brand-version">GẮN LOGO VIP PRO</div>
         </div>
       </div>
 
@@ -135,7 +135,7 @@
         <img class="brand-logo-image small" src="assets/brand/logo.png" alt="NTS" />
         <div class="app-brand-text">
           <strong>LOGO STUDIO PRO</strong>
-          <span>WEB V3.2</span>
+          <span>WEB V3.2.1</span>
         </div>
       </div>
 
@@ -318,17 +318,49 @@
               <div class="control-copy"><label for="sizeRange">Kích thước</label><span id="sizeValue">18%</span></div>
               <input id="sizeRange" type="range" min="2" max="80" value="18" />
             </div>
-            <div class="control-row">
-              <div class="control-copy"><label for="paddingRange">Khoảng cách lề</label><span id="paddingValue">28 px</span></div>
-              <input id="paddingRange" type="range" min="0" max="1200" value="28" />
+            <div class="precision-control-group">
+              <div class="precision-group-head">
+                <div><strong>KHOẢNG CÁCH LỀ</strong><small>Hai trục độc lập, tính theo kích thước thật của từng ảnh.</small></div>
+                <button id="resetMargins" class="text-button" type="button">Reset lề</button>
+              </div>
+              <div class="control-row precision-row">
+                <div class="control-copy"><label for="paddingXRange">Lề ngang X</label><span id="paddingXValue">28 px</span></div>
+                <div class="range-number-grid">
+                  <input id="paddingXRange" type="range" min="0" max="3000" step="1" value="28" />
+                  <input id="paddingXNumber" class="precision-number" type="number" inputmode="numeric" min="0" max="3000" step="1" value="28" aria-label="Lề ngang X chính xác theo pixel" />
+                </div>
+              </div>
+              <div class="control-row precision-row">
+                <div class="control-copy"><label for="paddingYRange">Lề dọc Y</label><span id="paddingYValue">28 px</span></div>
+                <div class="range-number-grid">
+                  <input id="paddingYRange" type="range" min="0" max="3000" step="1" value="28" />
+                  <input id="paddingYNumber" class="precision-number" type="number" inputmode="numeric" min="0" max="3000" step="1" value="28" aria-label="Lề dọc Y chính xác theo pixel" />
+                </div>
+              </div>
             </div>
-            <div class="control-row">
-              <div class="control-copy"><label for="offsetXRange">Ngang X</label><span id="offsetXValue">0 px</span></div>
-              <input id="offsetXRange" type="range" min="-3000" max="3000" value="0" />
-            </div>
-            <div class="control-row">
-              <div class="control-copy"><label for="offsetYRange">Dọc Y</label><span id="offsetYValue">0 px</span></div>
-              <input id="offsetYRange" type="range" min="-3000" max="3000" value="0" />
+            <div class="precision-control-group offset-group">
+              <div class="precision-group-head">
+                <div><strong>TINH CHỈNH VỊ TRÍ</strong><small>Dịch logo khỏi vị trí neo mà không làm thay đổi khoảng lề.</small></div>
+              </div>
+              <div class="control-row precision-row">
+                <div class="control-copy"><label for="offsetXRange">Dịch ngang X</label><span id="offsetXValue">0 px</span></div>
+                <div class="range-number-grid">
+                  <input id="offsetXRange" type="range" min="-3000" max="3000" step="1" value="0" />
+                  <input id="offsetXNumber" class="precision-number" type="number" inputmode="numeric" min="-3000" max="3000" step="1" value="0" aria-label="Dịch ngang X chính xác theo pixel" />
+                </div>
+              </div>
+              <div class="control-row precision-row">
+                <div class="control-copy"><label for="offsetYRange">Dịch dọc Y</label><span id="offsetYValue">0 px</span></div>
+                <div class="range-number-grid">
+                  <input id="offsetYRange" type="range" min="-3000" max="3000" step="1" value="0" />
+                  <input id="offsetYNumber" class="precision-number" type="number" inputmode="numeric" min="-3000" max="3000" step="1" value="0" aria-label="Dịch dọc Y chính xác theo pixel" />
+                </div>
+                <div class="nudge-pad" aria-label="Dịch logo nhanh 1 pixel">
+                  <span></span><button type="button" data-nudge="y:-1" title="Lên 1 px">↑</button><span></span>
+                  <button type="button" data-nudge="x:-1" title="Trái 1 px">←</button><button type="button" data-nudge="x:0" disabled aria-hidden="true">•</button><button type="button" data-nudge="x:1" title="Phải 1 px">→</button>
+                  <span></span><button type="button" data-nudge="y:1" title="Xuống 1 px">↓</button><span></span>
+                </div>
+              </div>
             </div>
             <div class="control-row">
               <div class="control-copy"><label for="rotationRange">Xoay</label><span id="rotationValue">0°</span></div>
@@ -355,7 +387,7 @@
               <button id="applySelectedButton" class="secondary-button" type="button">Áp dụng ảnh đã chọn</button>
               <button id="applyAllButton" class="secondary-button" type="button">Áp dụng tất cả</button>
             </div>
-            <div class="smart-apply-note"><strong>SMART APPLY 3.2</strong><span>Đồng bộ thông minh</span></div>
+            <div class="smart-apply-note"><strong>SMART APPLY 3.2.1</strong><span>Lề ngang scale theo chiều rộng, lề dọc scale theo chiều cao; Dịch X/Y cũng scale theo đúng trục. Ảnh ngang và ảnh dọc vì vậy giữ bố cục tương đối ổn định mà vẫn cho tinh chỉnh độc lập từng lề.</span></div>
           </section>
 
           <section class="setting-section export-section">
