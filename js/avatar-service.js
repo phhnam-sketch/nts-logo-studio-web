@@ -15,13 +15,55 @@
   const bound = new Map();
   const localOverrides = new Map();
   const remoteCache = new Map();
+  // URL that has actually loaded successfully in this browser for a user.
+  // This is intentionally separate from DB metadata: one successful mini-avatar
+  // immediately becomes the source for every other surface showing the same user.
+  const resolvedUrlCache = new Map();
   const lastAttempt = new Map();
   const pendingIds = new Set();
   let pendingTimer = 0;
   let observer = null;
 
   function versionOf(member) {
-    return member?.avatar_revision || member?.avatar_storage_version || member?.avatar_version || member?.avatar_updated_at || member?.updated_at || Date.now();
+    return member?.avatar_revision || member?.avatar_storage_version || member?.avatar_version || member?.avatar_updated_at || member?.updated_at || 0;
+  }
+
+  function revisionOf(member) {
+    const n = Number(member?.avatar_revision || 0);
+    return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
+  }
+
+  function canonicalStorageUrl(member, forceStamp = false) {
+    const id = uidOf(member);
+    if (!id || !NTS.supabase?.storage) return null;
+    try {
+      const { data } = NTS.supabase.storage.from(BUCKET).getPublicUrl(`${id}/avatar.jpg`);
+      if (!data?.publicUrl) return null;
+      const version = versionOf(member) || (forceStamp ? Date.now() : Math.floor(Date.now() / 30000));
+      return addVersion(data.publicUrl, version);
+    } catch (_) { return null; }
+  }
+
+  function revisionStorageUrl(member) {
+    const id = uidOf(member);
+    const revision = revisionOf(member);
+    if (!id || !revision || !NTS.supabase?.storage) return null;
+    try {
+      const { data } = NTS.supabase.storage.from(BUCKET).getPublicUrl(`${id}/avatar/${revision}.jpg`);
+      return data?.publicUrl ? addVersion(data.publicUrl, revision) : null;
+    } catch (_) { return null; }
+  }
+
+  function cachedResolved(member) {
+    const id = uidOf(member);
+    const row = id ? resolvedUrlCache.get(id) : null;
+    if (!row) return null;
+    const currentRevision = revisionOf(member);
+    if (currentRevision && row.revision && currentRevision > row.revision) {
+      resolvedUrlCache.delete(id);
+      return null;
+    }
+    return row.url || null;
   }
 
   function addVersion(url, version) {
@@ -94,16 +136,22 @@
   function candidates(member) {
     const m = mergedMember(member);
     const values = [];
+    const resolved = cachedResolved(m);
     const exactStorage = publicStorageUrl(m);
+    const revisionStorage = revisionStorageUrl(m);
     const raw = String(m?.avatar_url || "").trim();
+    const canonical = canonicalStorageUrl(m);
     const oauth = String(m?.oauth_avatar_url || "").trim();
 
-    // V3.14 SOURCE OF TRUTH ORDER:
-    // 1) actual Storage object path resolved from DB, 2) profile URL, 3) OAuth, 4) fallback.
-    // This prevents a still-valid old avatar_url from blocking a newer Storage object.
+    // V3.14.1 HARD FALLBACK ORDER.
+    // Never depend on one RPC/projection field. The app has historically kept
+    // <uid>/avatar.jpg for compatibility, so cross-account rendering always tries it.
+    if (resolved && !isDefaultLike(resolved)) values.push(resolved);
     if (exactStorage) values.push(exactStorage);
-    if (raw && !isDefaultLike(raw)) values.push(addVersion(raw, versionOf(m)));
-    if (oauth && !isDefaultLike(oauth)) values.push(addVersion(oauth, versionOf(m)));
+    if (revisionStorage) values.push(revisionStorage);
+    if (raw && !isDefaultLike(raw)) values.push(addVersion(raw, versionOf(m) || Date.now()));
+    if (canonical) values.push(canonical);
+    if (oauth && !isDefaultLike(oauth)) values.push(addVersion(oauth, versionOf(m) || Date.now()));
     values.push(fallback());
     return [...new Set(values.filter(Boolean))];
   }
@@ -180,6 +228,23 @@
     }
   }
 
+  async function hydrateFromProjection(ids) {
+    if (!ids?.length || !NTS.supabase?.from) return [];
+    try {
+      const { data, error } = await NTS.supabase
+        .from("member_public_profiles")
+        .select("user_id,display_name,avatar_url,oauth_avatar_url,avatar_object_path,avatar_revision,avatar_updated_at,role,plan,status,vip_until,updated_at")
+        .in("user_id", ids);
+      if (error) throw error;
+      const rows = Array.isArray(data) ? data.map(normalizeRemote).filter(Boolean) : [];
+      rows.forEach(acceptRemote);
+      return rows;
+    } catch (error) {
+      console.warn("NTS Avatar Hub projection fallback unavailable", error);
+      return [];
+    }
+  }
+
   async function hydrateMembers(members, { force = false } = {}) {
     const list = Array.isArray(members) ? members : [members];
     const ids = [...new Set(list.map(uidOf).filter(Boolean))];
@@ -194,9 +259,28 @@
       rows.forEach(acceptRemote);
       return rows;
     } catch (error) {
-      // Migration 014 may not be present during rolling deployment. Fall back without breaking old code.
-      console.warn("NTS Avatar Hub batch hydration unavailable", error);
-      return [];
+      // RPC is an optimization, not a single point of failure. Read the safe public
+      // projection directly; if that also fails, bindImage still tries <uid>/avatar.jpg.
+      console.warn("NTS Avatar Hub batch RPC unavailable; using projection fallback", error);
+      return hydrateFromProjection(need);
+    }
+  }
+
+  function propagateResolvedUrl(userId, url, member, sourceImg = null) {
+    const id = String(userId || "").trim();
+    if (!id || !url || isDefaultLike(url)) return;
+    const revision = revisionOf(member);
+    resolvedUrlCache.set(id, { url, revision, at:Date.now() });
+    const set = bound.get(id);
+    if (!set) return;
+    for (const other of [...set]) {
+      if (!other.isConnected) { set.delete(other); continue; }
+      applyCrop(other, member || { user_id:id });
+      const current = other.currentSrc || other.src || "";
+      if (other !== sourceImg && current !== url) {
+        other.dataset.ntsAvatarResolved = "1";
+        other.src = url;
+      }
     }
   }
 
@@ -222,6 +306,12 @@
       img.src = list[index] || fallback();
     };
 
+    img.onload = () => {
+      if (img.dataset.ntsAvatarToken !== token) return;
+      const loaded = img.currentSrc || img.src || "";
+      if (!isDefaultLike(loaded) && id) propagateResolvedUrl(id, loaded, mergedMember(m), img);
+    };
+
     img.onerror = async () => {
       if (img.dataset.ntsAvatarToken !== token) return;
       index += 1;
@@ -235,6 +325,14 @@
         rehydrated = true;
         const rows = await hydrateMembers([{ user_id:id }], { force:true });
         if (rows.length && img.isConnected) return bindImage(img, { ...m, ...rows[0] }, { lazy:false, hydrate:false });
+      }
+      // Last live attempt: legacy canonical path is intentionally maintained by
+      // profile.js and works even when every DB avatar projection is stale.
+      const canonicalFresh = canonicalStorageUrl({ ...m, user_id:id }, true);
+      if (canonicalFresh && !String(img.src || "").includes(`${id}/avatar.jpg`)) {
+        img.onerror = () => { img.onerror = null; img.src = fallback(); };
+        img.src = canonicalFresh;
+        return;
       }
       img.onerror = null;
       img.src = fallback();
@@ -264,6 +362,8 @@
     const merged = normalizeRemote({ ...(member || {}), user_id:id }) || { ...(member || {}), user_id:id };
     localOverrides.set(id, { member:merged, expiresAt:Date.now() + ttlMs });
     remoteCache.set(id, { member:merged, expiresAt:Date.now() + REMOTE_TTL });
+    const direct = publicStorageUrl(merged) || String(merged.avatar_url || "").trim();
+    if (direct && !isDefaultLike(direct)) resolvedUrlCache.set(id, { url:direct, revision:revisionOf(merged), at:Date.now() });
     refreshBound(id, merged);
     window.dispatchEvent(new CustomEvent("nts:avatar-resolved", { detail:{ userId:id, member:merged } }));
     try { avatarBroadcast?.postMessage({ type:"avatar", member:merged }); } catch (_) {}
@@ -285,6 +385,7 @@
     if (!id) return;
     localOverrides.delete(id);
     remoteCache.delete(id);
+    resolvedUrlCache.delete(id);
     lastAttempt.delete(id);
     refreshBound(id, { user_id:id, avatar_storage_version:Date.now(), avatar_revision:Date.now() });
     scheduleHydrate(id, { force:true });
@@ -344,6 +445,7 @@
   NTS.avatar = {
     fallback, uidOf, roleClass, roleLabel, addVersion, storagePath, publicStorageUrl,
     signedAvatar, candidates, bindImage, refreshBound, publishLocal, acceptRemote, invalidate,
-    hydrateMembers, scheduleHydrate, mergedMember, scanNode
+    hydrateMembers, hydrateFromProjection, scheduleHydrate, mergedMember, scanNode,
+    canonicalStorageUrl, revisionStorageUrl, propagateResolvedUrl
   };
 })();
