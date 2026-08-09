@@ -24,7 +24,7 @@
     cover_pos_x: 50, cover_pos_y: 50, cover_zoom: 100,
     avatar_crop_version: 0, cover_crop_version: 0,
     avatar_object_path: null, cover_object_path: null,
-    avatar_revision: 0, cover_revision: 0
+    avatar_revision: 0, cover_revision: 0, avatar_thumb_data: null
   }; }
   function brandFallback(kind) {
     const brand = cfg.BRAND || {};
@@ -223,6 +223,7 @@
       // Never block profile rendering on CDN verification. Owner sees DB/local media first;
       // remote verification is background-only.
       Promise.allSettled([ensureVisibleMedia("avatar"), ensureVisibleMedia("cover")]).catch(() => {});
+      runInBackground(selfHealAvatarThumb, "avatar thumbnail self-heal");
     } catch (error) {
       console.error(error);
       toast("Không tải được hồ sơ", error.message || String(error), "error");
@@ -275,6 +276,74 @@
       if (blob.size > 5 * 1024 * 1024) throw new Error("Ảnh sau tối ưu vẫn lớn hơn 5 MB. Hãy chọn ảnh khác.");
       return { blob, width, height, extension: "jpg" };
     } finally { decoded?.close?.(); }
+  }
+
+  function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("Không tạo được thumbnail avatar."));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function makeAvatarThumbDataUrl(blob) {
+    if (!(blob instanceof Blob)) throw new Error("AVATAR_THUMB_SOURCE_INVALID");
+    const decoded = await decodeImage(blob);
+    try {
+      const sw = Number(decoded.width || decoded.naturalWidth || 0);
+      const sh = Number(decoded.height || decoded.naturalHeight || 0);
+      if (!sw || !sh) throw new Error("Không đọc được ảnh để tạo thumbnail.");
+      const size = 160;
+      const canvas = typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(size, size) : document.createElement("canvas");
+      canvas.width = size; canvas.height = size;
+      const ctx = canvas.getContext("2d", { alpha:false, desynchronized:true });
+      ctx.fillStyle = "#ffffff"; ctx.fillRect(0,0,size,size);
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+      const side = Math.min(sw, sh);
+      const sx = Math.max(0, (sw - side) / 2);
+      const sy = Math.max(0, (sh - side) / 2);
+      ctx.drawImage(decoded, sx, sy, side, side, 0, 0, size, size);
+      const out = canvas.convertToBlob
+        ? await canvas.convertToBlob({ type:"image/jpeg", quality:.84 })
+        : await canvasBlob(canvas, "image/jpeg", .84);
+      canvas.width = canvas.height = 1;
+      const dataUrl = await blobToDataUrl(out);
+      if (dataUrl.length > 180000) throw new Error("Thumbnail avatar vượt giới hạn an toàn.");
+      return dataUrl;
+    } finally { decoded?.close?.(); }
+  }
+
+  async function publishAvatarThumb(thumb, revision) {
+    if (!state.user || !client()) return null;
+    const { data, error } = await client().rpc("set_my_avatar_thumb_v315", {
+      p_thumb: thumb || null,
+      p_revision: Number(revision || state.profile?.avatar_revision || 0) || null
+    });
+    if (error) throw error;
+    state.profile = { ...defaults(), ...(state.profile || {}), avatar_thumb_data: thumb || null };
+    return data || null;
+  }
+
+  async function selfHealAvatarThumb() {
+    const p = state.profile || defaults();
+    if (!state.user || !p.avatar_url || p.avatar_thumb_data) return;
+    let path = p.avatar_object_path || storagePathFromPublicUrl(p.avatar_url) || `${state.user.id}/avatar.jpg`;
+    if (!path || !String(path).startsWith(`${state.user.id}/`)) return;
+    try {
+      const { data:blob, error } = await client().storage.from("profile-media").download(path);
+      if (error || !(blob instanceof Blob)) throw error || new Error("AVATAR_DOWNLOAD_FAILED");
+      const thumb = await makeAvatarThumbDataUrl(blob);
+      await publishAvatarThumb(thumb, p.avatar_revision);
+      NTS.avatar?.publishLocal?.(state.user.id, {
+        user_id:state.user.id, display_name:p.display_name, avatar_url:p.avatar_url,
+        avatar_storage_path:p.avatar_object_path, avatar_revision:p.avatar_revision,
+        avatar_thumb_data:thumb
+      });
+      window.dispatchEvent(new CustomEvent("nts:avatar-updated", { detail:{ userId:state.user.id, profile:state.profile, thumb } }));
+    } catch (error) {
+      console.warn("avatar thumbnail self-heal failed", error);
+    }
   }
 
   async function removeStoredPath(url) {
@@ -370,6 +439,7 @@
     revokeUrl("previewUrls", kind);
     state.previewUrls[kind] = URL.createObjectURL(normalized.blob);
     scheduleLegacyMediaCompatibility(kind, normalized.blob, null, primary);
+    if (kind === "avatar") primary.thumb = await makeAvatarThumbDataUrl(normalized.blob);
     return primary;
   }
 
@@ -434,6 +504,7 @@
 
       // Critical path is intentionally tiny: upload FINAL cropped pixels to a UNIQUE URL,
       // update DB, render. Source/canonical/auth metadata sync continue in background.
+      const thumbPromise = kind === "avatar" ? makeAvatarThumbDataUrl(cropBlob) : Promise.resolve(null);
       primary = await uploadImmutableBlob(kind, cropBlob);
       const prefix = kind === "avatar" ? "avatar" : "cover";
       const payload = {
@@ -449,6 +520,11 @@
       if (error) throw error;
 
       state.profile = { ...defaults(), ...data };
+      const avatarThumb = kind === "avatar" ? await thumbPromise : null;
+      if (kind === "avatar") {
+        await publishAvatarThumb(avatarThumb, primary.revision);
+        state.profile.avatar_thumb_data = avatarThumb;
+      }
       runInBackground(syncMyPublicProfileBestEffort, "public avatar projection self-heal");
       if (previousRuntime && previousRuntime !== optimisticUrl && /^blob:/i.test(previousRuntime)) {
         try { URL.revokeObjectURL(previousRuntime); } catch (_) {}
@@ -466,12 +542,13 @@
           avatar_storage_path: primary.path,
           avatar_storage_version: new Date().toISOString(),
           avatar_revision: primary.revision,
+          avatar_thumb_data: avatarThumb,
           role: NTS.membership?.state?.account?.role || "member",
           plan: NTS.membership?.state?.account?.plan || "free"
         });
       }
       window.dispatchEvent(new CustomEvent("nts:profile-saved", { detail: { profile: state.profile, kind } }));
-      window.dispatchEvent(new CustomEvent("nts:avatar-updated", { detail: { userId: state.user.id, profile: state.profile, kind, url: primary.url, path: primary.path, revision: primary.revision } }));
+      window.dispatchEvent(new CustomEvent("nts:avatar-updated", { detail: { userId: state.user.id, profile: state.profile, kind, url: primary.url, path: primary.path, revision: primary.revision, thumb: avatarThumb } }));
 
       scheduleLegacyMediaCompatibility(kind, cropBlob, sourceFile, primary);
 
@@ -533,6 +610,8 @@
     state.profile = { ...defaults(), ...data };
     revokeUrl("runtimeUrls", kind); revokeUrl("previewUrls", kind);
     if (kind === "avatar") {
+      try { await publishAvatarThumb(null, payload.avatar_revision); } catch (error) { console.warn("clear avatar thumbnail", error); }
+      state.profile.avatar_thumb_data = null;
       try { await client().auth.updateUser({ data: { avatar_url: null } }); } catch (_) {}
       NTS.avatar?.invalidate?.(state.user.id);
     }
@@ -582,6 +661,10 @@
       if (error) throw error;
       if (!data) throw new Error("Không nhận được hồ sơ sau khi lưu. Hãy kiểm tra RLS của bảng profiles.");
       state.profile = { ...defaults(), ...data };
+      if (avatarResult?.url && avatarResult?.thumb) {
+        await publishAvatarThumb(avatarResult.thumb, avatarResult.revision);
+        state.profile.avatar_thumb_data = avatarResult.thumb;
+      }
       runInBackground(syncMyPublicProfileBestEffort, "public profile projection self-heal");
       render(); // immediate: local normalized blob is already visible here.
 
@@ -590,8 +673,8 @@
         if (authResult?.error) throw authResult.error;
       }, "auth profile metadata background sync");
       if (avatarResult?.url) {
-        NTS.avatar?.publishLocal?.(state.user.id, { user_id:state.user.id, display_name:displayName, avatar_url:avatarResult.url, avatar_storage_path:avatarResult.path, avatar_revision:avatarResult.revision });
-        window.dispatchEvent(new CustomEvent("nts:avatar-updated", { detail: { userId:state.user.id, profile:state.profile, kind:"avatar", url:avatarResult.url, path:avatarResult.path, revision:avatarResult.revision } }));
+        NTS.avatar?.publishLocal?.(state.user.id, { user_id:state.user.id, display_name:displayName, avatar_url:avatarResult.url, avatar_storage_path:avatarResult.path, avatar_revision:avatarResult.revision, avatar_thumb_data:avatarResult.thumb || state.profile.avatar_thumb_data || null });
+        window.dispatchEvent(new CustomEvent("nts:avatar-updated", { detail: { userId:state.user.id, profile:state.profile, kind:"avatar", url:avatarResult.url, path:avatarResult.path, revision:avatarResult.revision, thumb:avatarResult.thumb || state.profile.avatar_thumb_data || null } }));
       }
       if ($("profileAvatarInput")) $("profileAvatarInput").value = "";
       if ($("profileCoverInput")) $("profileCoverInput").value = "";

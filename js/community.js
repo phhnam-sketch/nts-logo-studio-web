@@ -602,6 +602,7 @@
       peer_id: row.user_id,
       display_name: row.display_name || "Hội viên",
       avatar_url: row.avatar_url || null,
+      avatar_thumb_data: row.avatar_thumb_data || null,
       oauth_avatar_url: row.oauth_avatar_url || null,
       avatar_storage_path: row.avatar_object_path || row.avatar_storage_path || null,
       avatar_storage_version: row.avatar_updated_at || row.updated_at || null,

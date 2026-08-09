@@ -19,10 +19,18 @@
   // This is intentionally separate from DB metadata: one successful mini-avatar
   // immediately becomes the source for every other surface showing the same user.
   const resolvedUrlCache = new Map();
+  // Authenticated byte-download fallback. This bypasses public CDN URLs entirely and
+  // is shared by every mini-avatar for the same user.
+  const downloadedBlobCache = new Map();
   const lastAttempt = new Map();
   const pendingIds = new Set();
   let pendingTimer = 0;
   let observer = null;
+
+  function thumbOf(member) {
+    const value = String(member?.avatar_thumb_data || member?.avatar_thumb || "").trim();
+    return /^data:image\/(?:jpeg|jpg|png|webp);base64,/i.test(value) ? value : null;
+  }
 
   function versionOf(member) {
     return member?.avatar_revision || member?.avatar_storage_version || member?.avatar_version || member?.avatar_updated_at || member?.updated_at || 0;
@@ -122,7 +130,8 @@
       peer_id: row.peer_id || id,
       avatar_storage_path: row.avatar_storage_path || row.avatar_object_path || null,
       avatar_storage_version: row.avatar_storage_version || row.avatar_updated_at || row.updated_at || null,
-      avatar_revision: Number(row.avatar_revision || 0)
+      avatar_revision: Number(row.avatar_revision || 0),
+      avatar_thumb_data: thumbOf(row)
     };
   }
 
@@ -136,12 +145,17 @@
   function candidates(member) {
     const m = mergedMember(member);
     const values = [];
+    const thumb = thumbOf(m);
     const resolved = cachedResolved(m);
     const exactStorage = publicStorageUrl(m);
     const revisionStorage = revisionStorageUrl(m);
     const raw = String(m?.avatar_url || "").trim();
     const canonical = canonicalStorageUrl(m);
     const oauth = String(m?.oauth_avatar_url || "").trim();
+
+    // V3.15: inline DB thumbnail is authoritative for every mini-avatar.
+    // It bypasses Storage URL/CDN/cache issues completely.
+    if (thumb) values.push(thumb);
 
     // V3.14.1 HARD FALLBACK ORDER.
     // Never depend on one RPC/projection field. The app has historically kept
@@ -152,8 +166,40 @@
     if (raw && !isDefaultLike(raw)) values.push(addVersion(raw, versionOf(m) || Date.now()));
     if (canonical) values.push(canonical);
     if (oauth && !isDefaultLike(oauth)) values.push(addVersion(oauth, versionOf(m) || Date.now()));
-    values.push(fallback());
+    // IMPORTANT: static fallback is not part of the candidate chain. If it loaded here,
+    // onerror would never reach hydration / authenticated download recovery.
     return [...new Set(values.filter(Boolean))];
+  }
+
+
+  async function downloadAvatarBlobUrl(member) {
+    const m = mergedMember(member);
+    const id = uidOf(m);
+    if (!id || !NTS.supabase?.storage) return null;
+    const existing = downloadedBlobCache.get(id);
+    const revision = revisionOf(m);
+    if (existing && (!revision || !existing.revision || existing.revision >= revision)) return existing.url;
+
+    const paths = [];
+    const exact = storagePath(m);
+    if (exact) paths.push(exact);
+    if (revision) paths.push(`${id}/avatar/${revision}.jpg`);
+    paths.push(`${id}/avatar.jpg`);
+
+    for (const path of [...new Set(paths.filter(Boolean))]) {
+      try {
+        const { data, error } = await NTS.supabase.storage.from(BUCKET).download(path);
+        if (error || !(data instanceof Blob)) continue;
+        const url = URL.createObjectURL(data);
+        if (existing?.url && /^blob:/i.test(existing.url)) {
+          try { URL.revokeObjectURL(existing.url); } catch (_) {}
+        }
+        downloadedBlobCache.set(id, { url, revision, path, at:Date.now() });
+        resolvedUrlCache.set(id, { url, revision, at:Date.now() });
+        return url;
+      } catch (_) {}
+    }
+    return null;
   }
 
   async function signedAvatar(member) {
@@ -209,13 +255,29 @@
     pendingTimer = setTimeout(flushHydrationQueue, 18);
   }
 
+
+  async function fetchAvatarMap(ids) {
+    if (!ids?.length || !NTS.supabase?.rpc) return { data: [], error: null };
+    let last = null;
+    for (const name of ["get_member_avatar_map_v315", "get_member_avatar_map_v314"]) {
+      try {
+        const result = await NTS.supabase.rpc(name, { p_user_ids: ids });
+        last = result;
+        if (!result?.error) return result;
+        const message = String(result.error?.message || "");
+        if (!/function|schema cache|does not exist|PGRST202/i.test(message)) return result;
+      } catch (error) { last = { data:null, error }; }
+    }
+    return last || { data:[], error:new Error("AVATAR_MAP_UNAVAILABLE") };
+  }
+
   async function flushHydrationQueue() {
     const ids = [...pendingIds];
     pendingIds.clear();
     if (!ids.length || !NTS.supabase?.rpc) return [];
     ids.forEach(id => lastAttempt.set(id, Date.now()));
     try {
-      const { data, error } = await NTS.supabase.rpc("get_member_avatar_map_v314", { p_user_ids: ids });
+      const { data, error } = await fetchAvatarMap(ids);
       if (error) throw error;
       const rows = Array.isArray(data) ? data.map(normalizeRemote).filter(Boolean) : [];
       const found = new Set();
@@ -233,7 +295,7 @@
     try {
       const { data, error } = await NTS.supabase
         .from("member_public_profiles")
-        .select("user_id,display_name,avatar_url,oauth_avatar_url,avatar_object_path,avatar_revision,avatar_updated_at,role,plan,status,vip_until,updated_at")
+        .select("user_id,display_name,avatar_url,oauth_avatar_url,avatar_object_path,avatar_revision,avatar_updated_at,avatar_thumb_data,role,plan,status,vip_until,updated_at")
         .in("user_id", ids);
       if (error) throw error;
       const rows = Array.isArray(data) ? data.map(normalizeRemote).filter(Boolean) : [];
@@ -253,7 +315,7 @@
     if (!need.length) return ids.map(id => cacheRow(id)).filter(Boolean);
     need.forEach(id => lastAttempt.set(id, Date.now()));
     try {
-      const { data, error } = await NTS.supabase.rpc("get_member_avatar_map_v314", { p_user_ids: need });
+      const { data, error } = await fetchAvatarMap(need);
       if (error) throw error;
       const rows = Array.isArray(data) ? data.map(normalizeRemote).filter(Boolean) : [];
       rows.forEach(acceptRemote);
@@ -300,25 +362,13 @@
     let index = 0;
     let signedTried = false;
     let rehydrated = false;
+    let downloadTried = false;
 
-    const set = () => {
+    async function recover() {
       if (img.dataset.ntsAvatarToken !== token) return;
-      img.src = list[index] || fallback();
-    };
-
-    img.onload = () => {
-      if (img.dataset.ntsAvatarToken !== token) return;
-      const loaded = img.currentSrc || img.src || "";
-      if (!isDefaultLike(loaded) && id) propagateResolvedUrl(id, loaded, mergedMember(m), img);
-    };
-
-    img.onerror = async () => {
-      if (img.dataset.ntsAvatarToken !== token) return;
-      index += 1;
-      if (index < list.length) return set();
       if (!signedTried) {
         signedTried = true;
-        const signed = await signedAvatar(m);
+        const signed = await signedAvatar(mergedMember(m));
         if (signed && img.dataset.ntsAvatarToken === token) { img.src = signed; return; }
       }
       if (!rehydrated && id) {
@@ -326,8 +376,11 @@
         const rows = await hydrateMembers([{ user_id:id }], { force:true });
         if (rows.length && img.isConnected) return bindImage(img, { ...m, ...rows[0] }, { lazy:false, hydrate:false });
       }
-      // Last live attempt: legacy canonical path is intentionally maintained by
-      // profile.js and works even when every DB avatar projection is stale.
+      if (!downloadTried && id) {
+        downloadTried = true;
+        const blobUrl = await downloadAvatarBlobUrl(mergedMember(m));
+        if (blobUrl && img.dataset.ntsAvatarToken === token) { img.src = blobUrl; return; }
+      }
       const canonicalFresh = canonicalStorageUrl({ ...m, user_id:id }, true);
       if (canonicalFresh && !String(img.src || "").includes(`${id}/avatar.jpg`)) {
         img.onerror = () => { img.onerror = null; img.src = fallback(); };
@@ -336,6 +389,24 @@
       }
       img.onerror = null;
       img.src = fallback();
+    }
+
+    const set = () => {
+      if (img.dataset.ntsAvatarToken !== token) return;
+      if (index < list.length) img.src = list[index];
+      else void recover();
+    };
+
+    img.onload = () => {
+      if (img.dataset.ntsAvatarToken !== token) return;
+      const loaded = img.currentSrc || img.src || "";
+      if (!isDefaultLike(loaded) && id) propagateResolvedUrl(id, loaded, mergedMember(m), img);
+    };
+
+    img.onerror = () => {
+      if (img.dataset.ntsAvatarToken !== token) return;
+      index += 1;
+      set();
     };
 
     set();
@@ -362,7 +433,7 @@
     const merged = normalizeRemote({ ...(member || {}), user_id:id }) || { ...(member || {}), user_id:id };
     localOverrides.set(id, { member:merged, expiresAt:Date.now() + ttlMs });
     remoteCache.set(id, { member:merged, expiresAt:Date.now() + REMOTE_TTL });
-    const direct = publicStorageUrl(merged) || String(merged.avatar_url || "").trim();
+    const direct = thumbOf(merged) || publicStorageUrl(merged) || String(merged.avatar_url || "").trim();
     if (direct && !isDefaultLike(direct)) resolvedUrlCache.set(id, { url:direct, revision:revisionOf(merged), at:Date.now() });
     refreshBound(id, merged);
     window.dispatchEvent(new CustomEvent("nts:avatar-resolved", { detail:{ userId:id, member:merged } }));
@@ -386,6 +457,9 @@
     localOverrides.delete(id);
     remoteCache.delete(id);
     resolvedUrlCache.delete(id);
+    const downloaded = downloadedBlobCache.get(id);
+    if (downloaded?.url && /^blob:/i.test(downloaded.url)) { try { URL.revokeObjectURL(downloaded.url); } catch (_) {} }
+    downloadedBlobCache.delete(id);
     lastAttempt.delete(id);
     refreshBound(id, { user_id:id, avatar_storage_version:Date.now(), avatar_revision:Date.now() });
     scheduleHydrate(id, { force:true });
@@ -428,7 +502,8 @@
     publishLocal(d.userId, {
       ...(d.profile || {}), user_id:d.userId, avatar_url:d.url || d.profile?.avatar_url || null,
       avatar_storage_path:d.path || d.profile?.avatar_object_path || null,
-      avatar_revision:d.revision || d.profile?.avatar_revision || Date.now()
+      avatar_revision:d.revision || d.profile?.avatar_revision || Date.now(),
+      avatar_thumb_data:d.thumb || d.profile?.avatar_thumb_data || null
     });
   });
 
@@ -446,6 +521,6 @@
     fallback, uidOf, roleClass, roleLabel, addVersion, storagePath, publicStorageUrl,
     signedAvatar, candidates, bindImage, refreshBound, publishLocal, acceptRemote, invalidate,
     hydrateMembers, hydrateFromProjection, scheduleHydrate, mergedMember, scanNode,
-    canonicalStorageUrl, revisionStorageUrl, propagateResolvedUrl
+    canonicalStorageUrl, revisionStorageUrl, propagateResolvedUrl, thumbOf, fetchAvatarMap, downloadAvatarBlobUrl
   };
 })();
