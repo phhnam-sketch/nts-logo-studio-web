@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  // V3.2.1: precision margins X/Y + orientation-aware Smart Apply + direct-source watermark rendering + HiDPI preview + functional zoom/Fit.
+  // V3.4: preserves every V3.3 feature and adds faster desktop heuristics, lower export UI overhead, and a customizable split-hero login layout.
 
   const $ = (id) => document.getElementById(id);
   const toast = (title, message, kind = "info", duration) => window.NTS?.showToast?.(title, message, kind, duration);
@@ -12,6 +12,7 @@
   const MOBILE_SHARE_MAX_FILES = 8;
   const MOBILE_ZIP_MAX_INPUT = 40 * 1024 ** 2;
   const DESKTOP_ZIP_MAX_INPUT = 280 * 1024 ** 2;
+  const EXPORT_WORKER_URL = "js/export-worker.js";
 
   function withTimeout(promise, ms, message) {
     let timer;
@@ -49,6 +50,9 @@
     previewZoom: 1,
     lastFitScale: 1,
     forcePng: safeLocalGet("nts-export-lossless") === "1",
+    exportProfile: safeLocalGet("nts-export-profile") || "turbo",
+    pageHidden: document.visibilityState === "hidden",
+    exportWorkerCount: 0,
     settings: {
       pos: "SE",
       opacity: 92,
@@ -127,6 +131,8 @@
     rotationValue: $("rotationValue"),
     keepInsideToggle: $("keepInsideToggle"),
     losslessExportToggle: $("losslessExportToggle"),
+    exportSpeedMode: $("exportSpeedMode"),
+    exportEngineStatus: $("exportEngineStatus"),
     resetTransform: $("resetTransform"),
     applySelectedButton: $("applySelectedButton"),
     applyAllButton: $("applyAllButton"),
@@ -306,9 +312,39 @@
     els.batchProgressText.textContent = text || (total ? `${done}/${total} ảnh` : "Sẵn sàng xuất.");
   }
 
-  function yieldToUi() {
-    return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+  // requestAnimationFrame is intentionally NOT used by export jobs. Browsers pause rAF
+  // when a tab is hidden, which previously made batch export appear to stop after switching tabs.
+  const exportYieldQueue = [];
+  const exportYieldChannel = typeof MessageChannel !== "undefined" ? new MessageChannel() : null;
+  if (exportYieldChannel) {
+    exportYieldChannel.port1.onmessage = () => exportYieldQueue.shift()?.();
   }
+  function yieldToUi() {
+    if (!exportYieldChannel) return Promise.resolve();
+    return new Promise((resolve) => {
+      exportYieldQueue.push(resolve);
+      exportYieldChannel.port2.postMessage(0);
+    });
+  }
+
+
+
+  let lastBatchUiPaint = 0;
+  async function maybeBatchUiPaint(force = false) {
+    if (state.pageHidden) return;
+    const now = performance.now();
+    if (!force && now - lastBatchUiPaint < 90) return;
+    lastBatchUiPaint = now;
+    renderImageList();
+    await yieldToUi();
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    state.pageHidden = document.visibilityState === "hidden";
+    if (!state.pageHidden && state.exporting) {
+      toast("Batch vẫn đang chạy", `Đã quay lại tab. Engine xuất đang dùng ${state.exportWorkerCount || 1} luồng xử lý.`, "info", 3200);
+    }
+  });
 
   function isImageFile(file) {
     return file && file.type && file.type.startsWith("image/");
@@ -982,13 +1018,144 @@
     return withTimeout(work, IS_MOBILE ? 30000 : 60000, "Điện thoại mất quá lâu khi mã hóa ảnh. Hãy thử ít ảnh hơn hoặc ảnh có độ phân giải thấp hơn.");
   }
 
+  function exportQualityFor(mime) {
+    const mode = ["turbo", "balanced", "quality"].includes(state.exportProfile) ? state.exportProfile : "turbo";
+    if (mime === "image/jpeg") return mode === "quality" ? .995 : mode === "balanced" ? .985 : .96;
+    if (mime === "image/webp") return mode === "quality" ? .99 : mode === "balanced" ? .98 : .95;
+    return 1;
+  }
+
   function outputSpec(item) {
     const name = item.file.name;
     const stem = name.replace(/\.[^.]+$/, "");
     if (state.forcePng) return { mime: "image/png", ext: "png", quality: 1, name: `${stem}_watermarked.png` };
-    if (/jpe?g$/i.test(name) || item.file.type === "image/jpeg") return { mime: "image/jpeg", ext: "jpg", quality: .995, name: `${stem}_watermarked.jpg` };
-    if (/webp$/i.test(name) || item.file.type === "image/webp") return { mime: "image/webp", ext: "webp", quality: .99, name: `${stem}_watermarked.webp` };
+    if (/jpe?g$/i.test(name) || item.file.type === "image/jpeg") return { mime: "image/jpeg", ext: "jpg", quality: exportQualityFor("image/jpeg"), name: `${stem}_watermarked.jpg` };
+    if (/webp$/i.test(name) || item.file.type === "image/webp") return { mime: "image/webp", ext: "webp", quality: exportQualityFor("image/webp"), name: `${stem}_watermarked.webp` };
     return { mime: "image/png", ext: "png", quality: 1, name: `${stem}_watermarked.png` };
+  }
+
+  function maxPixelsForCurrentDevice() {
+    const rawRam = Number(navigator.deviceMemory);
+    const ramGb = Number.isFinite(rawRam) && rawRam > 0 ? rawRam : (IS_MOBILE ? 3 : 8);
+    return IS_MOBILE ? MOBILE_MAX_PIXELS : (ramGb <= 4 ? 45_000_000 : 90_000_000);
+  }
+
+  function recommendedWorkerCount() {
+    if (IS_MOBILE || typeof Worker === "undefined" || typeof OffscreenCanvas === "undefined") return 0;
+    const cores = Math.max(1, Number(navigator.hardwareConcurrency || 4));
+    const rawRam = Number(navigator.deviceMemory);
+    const ram = Number.isFinite(rawRam) && rawRam > 0 ? rawRam : 8;
+    if (ram <= 4) return 1;
+    if (cores >= 16 && ram >= 16) return 4;
+    if (cores >= 12 && ram >= 8) return 3;
+    if (cores >= 8 && ram >= 6) return 2;
+    if (cores >= 6) return 2;
+    return 1;
+  }
+
+  function setExportEngineStatus(text, kind = "ready") {
+    if (!els.exportEngineStatus) return;
+    els.exportEngineStatus.textContent = text;
+    els.exportEngineStatus.dataset.kind = kind;
+  }
+
+  async function createPreparedExportWorker(workerId) {
+    const worker = new Worker(EXPORT_WORKER_URL);
+    await new Promise((resolve, reject) => {
+      const onMessage = (event) => {
+        const data = event.data || {};
+        if (data.type !== "ready" || data.workerId !== workerId) return;
+        worker.removeEventListener("message", onMessage);
+        worker.removeEventListener("error", onError);
+        if (data.ok === false) reject(new Error(data.error || "Không khởi tạo được export worker."));
+        else resolve();
+      };
+      const onError = (event) => {
+        worker.removeEventListener("message", onMessage);
+        worker.removeEventListener("error", onError);
+        reject(new Error(event.message || "Export worker bị lỗi."));
+      };
+      worker.addEventListener("message", onMessage);
+      worker.addEventListener("error", onError);
+      worker.postMessage({ type: "init", workerId, logoFile: state.logoFile });
+    });
+    return worker;
+  }
+
+  async function renderWithWorker(worker, item) {
+    const spec = outputSpec(item);
+    const requestId = uniqueId();
+    return new Promise((resolve, reject) => {
+      const onMessage = (event) => {
+        const data = event.data || {};
+        if (data.type !== "result" || data.requestId !== requestId) return;
+        worker.removeEventListener("message", onMessage);
+        worker.removeEventListener("error", onError);
+        if (!data.ok) reject(new Error(data.error || "Worker không xuất được ảnh."));
+        else resolve({ blob: data.blob, fileName: spec.name, width: data.width, height: data.height, settings: data.settings });
+      };
+      const onError = (event) => {
+        worker.removeEventListener("message", onMessage);
+        worker.removeEventListener("error", onError);
+        reject(new Error(event.message || "Export worker bị lỗi."));
+      };
+      worker.addEventListener("message", onMessage);
+      worker.addEventListener("error", onError);
+      worker.postMessage({
+        type: "render", requestId, file: item.file, fileName: item.file.name,
+        settings: item.settings ? cloneSettings(item.settings) : captureRelativeSettings(state.settings, item),
+        mime: spec.mime, quality: spec.quality, maxPixels: maxPixelsForCurrentDevice()
+      });
+    });
+  }
+
+  async function processBatchInParallel(items, dirHandle, zip, usedNames) {
+    const count = recommendedWorkerCount();
+    if (!count) return null;
+    let workers = [];
+    let cursor = 0, done = 0, failed = 0, delivered = 0;
+    state.exportWorkerCount = count;
+    setExportEngineStatus(`TURBO WORKER ×${count} · V3.4`, "turbo");
+    try {
+      const initResults = await Promise.allSettled(Array.from({ length: count }, (_, i) => createPreparedExportWorker(i + 1)));
+      workers = initResults.filter((r) => r.status === "fulfilled").map((r) => r.value);
+      const initFailure = initResults.find((r) => r.status === "rejected");
+      if (initFailure) {
+        workers.forEach((worker) => { try { worker.terminate(); } catch (_) {} });
+        workers = [];
+        throw initFailure.reason || new Error("Không khởi tạo đủ export workers.");
+      }
+      const run = async (worker) => {
+        while (true) {
+          if (state.cancelExport) return;
+          const index = cursor++;
+          if (index >= items.length) return;
+          const item = items[index];
+          item.status = "processing"; item.error = "";
+          if (!state.pageHidden) await maybeBatchUiPaint();
+          const progressText = `${index + 1}/${items.length} · ${item.file.name}`;
+          setBatchProgress(done + failed, items.length, `Turbo ${progressText}`);
+          if (!state.pageHidden) showHud(`Turbo ${progressText}`);
+          try {
+            const result = await renderWithWorker(worker, item);
+            item.width = result.width; item.height = result.height; item.settings = cloneSettings(result.settings);
+            const safeName = uniqueOutputName(result.fileName, usedNames);
+            if (dirHandle) { await saveBlobToDirectory(dirHandle, safeName, result.blob); delivered += 1; }
+            else zip.file(safeName, result.blob);
+            item.status = "done"; done += 1;
+          } catch (error) {
+            console.error(error); item.status = "error"; item.error = error?.message || String(error); failed += 1;
+          }
+          setBatchProgress(done + failed, items.length, `Đã xử lý ${done + failed}/${items.length} ảnh · Turbo ×${count}`);
+          if (!state.pageHidden) { await maybeBatchUiPaint(done + failed >= items.length); }
+        }
+      };
+      await Promise.all(workers.map(run));
+      return { done, failed, delivered, cancelled: Math.max(0, items.length - done - failed) };
+    } finally {
+      workers.forEach((worker) => { try { worker.postMessage({ type: "dispose" }); } catch (_) {} try { worker.terminate(); } catch (_) {} });
+      state.exportWorkerCount = 0;
+    }
   }
 
   async function renderExportBlob(item) {
@@ -1001,9 +1168,7 @@
         `Không thể giải mã ${item.file.name} đủ nhanh trên thiết bị này.`
       );
       const pixels = bitmap.width * bitmap.height;
-      const rawRam = Number(navigator.deviceMemory);
-      const ramGb = Number.isFinite(rawRam) && rawRam > 0 ? rawRam : (IS_MOBILE ? 3 : 8);
-      const maxPixels = IS_MOBILE ? MOBILE_MAX_PIXELS : (ramGb <= 4 ? 45_000_000 : 90_000_000);
+      const maxPixels = maxPixelsForCurrentDevice();
       if (pixels > maxPixels) {
         const mp = Math.round(pixels / 1e6);
         const limitMp = Math.round(maxPixels / 1e6);
@@ -1212,25 +1377,58 @@
       setBatchProgress(0, items.length, `Chuẩn bị xuất ${items.length} ảnh ${label}...`);
       showHud(`Batch 0/${items.length} · đang chuẩn bị`);
 
-      for (let index = 0; index < items.length; index += 1) {
-        const item = items[index];
-        if (state.cancelExport) {
-          for (let j = index; j < items.length; j += 1) if (items[j].status !== "done" && items[j].status !== "error") items[j].status = "cancelled";
-          cancelled = items.length - index; break;
-        }
-        item.status = "processing"; item.error = ""; renderImageList();
-        const progressText = `${index + 1}/${items.length} · ${item.file.name}`;
-        setBatchProgress(index, items.length, `Đang xử lý ${progressText}`); showHud(`Batch ${progressText}`); await yieldToUi();
+      // Desktop V3.3: use multiple dedicated workers when supported. This keeps
+      // decode + watermark + encode off the main thread and removes the old
+      // requestAnimationFrame dependency that paused when switching tabs.
+      let parallelStats = null;
+      if (!IS_MOBILE && recommendedWorkerCount() > 0 && items.length > 1) {
         try {
-          const { blob, fileName } = await renderExportBlob(item);
-          const safeName = uniqueOutputName(fileName, usedNames);
-          if (dirHandle) { await saveBlobToDirectory(dirHandle, safeName, blob); delivered += 1; }
-          else zip.file(safeName, blob);
-          item.status = "done"; done += 1;
-        } catch (error) {
-          console.error(error); item.status = "error"; item.error = error?.message || String(error); failed += 1;
+          parallelStats = await processBatchInParallel(items, dirHandle, zip, usedNames);
+        } catch (workerError) {
+          console.warn("Parallel export unavailable, falling back to main thread:", workerError);
+          setExportEngineStatus("Fallback · main thread", "warning");
         }
-        renderImageList(); setBatchProgress(index + 1, items.length, `Đã xử lý ${index + 1}/${items.length} ảnh`); await yieldToUi();
+      }
+
+      if (parallelStats) {
+        done = parallelStats.done;
+        failed = parallelStats.failed;
+        delivered = parallelStats.delivered;
+        cancelled = parallelStats.cancelled;
+        if (state.cancelExport) {
+          items.forEach((item) => {
+            if (item.status !== "done" && item.status !== "error") item.status = "cancelled";
+          });
+        }
+        renderImageList();
+      } else {
+        state.exportWorkerCount = 1;
+        setExportEngineStatus("MAIN THREAD · 1 luồng", "balanced");
+        for (let index = 0; index < items.length; index += 1) {
+          const item = items[index];
+          if (state.cancelExport) {
+            for (let j = index; j < items.length; j += 1) if (items[j].status !== "done" && items[j].status !== "error") items[j].status = "cancelled";
+            cancelled = items.length - index; break;
+          }
+          item.status = "processing"; item.error = "";
+          if (!state.pageHidden) await maybeBatchUiPaint();
+          const progressText = `${index + 1}/${items.length} · ${item.file.name}`;
+          setBatchProgress(index, items.length, `Đang xử lý ${progressText}`);
+          if (!state.pageHidden) showHud(`Batch ${progressText}`);
+          if (!state.pageHidden) await yieldToUi();
+          try {
+            const { blob, fileName } = await renderExportBlob(item);
+            const safeName = uniqueOutputName(fileName, usedNames);
+            if (dirHandle) { await saveBlobToDirectory(dirHandle, safeName, blob); delivered += 1; }
+            else zip.file(safeName, blob);
+            item.status = "done"; done += 1;
+          } catch (error) {
+            console.error(error); item.status = "error"; item.error = error?.message || String(error); failed += 1;
+          }
+          setBatchProgress(index + 1, items.length, `Đã xử lý ${index + 1}/${items.length} ảnh`);
+          if (!state.pageHidden) { await maybeBatchUiPaint(index + 1 >= items.length); }
+        }
+        state.exportWorkerCount = 0;
       }
 
       if (zipMode && done > 0 && !state.cancelExport) {
@@ -1251,7 +1449,8 @@
       console.error(error); toast("Không thể xuất hàng loạt", error?.message || "Đã xảy ra lỗi khi chuẩn bị batch.", "error", 8000); setBatchProgress(0, items.length, error?.message || "Batch bị lỗi.");
     } finally {
       if (quotaReservation && !quotaFinished && window.NTS?.membership?.cancelExport) await window.NTS.membership.cancelExport(quotaReservation).catch(()=>{});
-      hideHud(); setExportUi(false); state.cancelExport = false;
+      hideHud(); setExportUi(false); state.cancelExport = false; state.exportWorkerCount = 0;
+      setExportEngineStatus(`TURBO · ${recommendedWorkerCount() || 1} luồng`, "turbo");
     }
   }
 
@@ -1279,6 +1478,19 @@
     }
   }
 
+  if (els.exportSpeedMode) {
+    if (!["turbo", "balanced", "quality"].includes(state.exportProfile)) state.exportProfile = "turbo";
+    els.exportSpeedMode.value = state.exportProfile;
+    els.exportSpeedMode.addEventListener("change", () => {
+      state.exportProfile = els.exportSpeedMode.value;
+      try { localStorage.setItem("nts-export-profile", state.exportProfile); } catch (_) {}
+      const labels = { turbo: "Turbo nhanh nhất", balanced: "Cân bằng", quality: "Chất lượng tối đa" };
+      setExportEngineStatus(state.exportProfile === "turbo" ? `TURBO · ${recommendedWorkerCount() || 1} luồng` : labels[state.exportProfile], state.exportProfile);
+      toast("Đã đổi chế độ xuất", `${labels[state.exportProfile]}. PNG siêu nét vẫn ưu tiên lossless nếu được bật.`, "success", 3200);
+    });
+    setExportEngineStatus(`TURBO · ${recommendedWorkerCount() || 1} luồng`, "turbo");
+  }
+
   if (els.losslessExportToggle) {
     els.losslessExportToggle.checked = state.forcePng;
     els.losslessExportToggle.addEventListener("change", () => {
@@ -1299,8 +1511,8 @@
     if (!state.exporting) return;
     state.cancelExport = true;
     els.cancelExportButton.disabled = true;
-    els.cancelExportButton.textContent = "Đang dừng sau ảnh hiện tại...";
-    toast("Đã nhận lệnh dừng", "Ảnh đang xử lý sẽ hoàn tất an toàn, sau đó batch sẽ dừng.", "warning", 5200);
+    els.cancelExportButton.textContent = "Đang dừng sau các ảnh đang xử lý...";
+    toast("Đã nhận lệnh dừng", "Các worker đang chạy sẽ hoàn tất ảnh hiện tại an toàn, sau đó batch sẽ dừng.", "warning", 5200);
     window.setTimeout(() => {
       els.cancelExportButton.disabled = false;
       els.cancelExportButton.textContent = "Dừng sau ảnh đang xử lý";

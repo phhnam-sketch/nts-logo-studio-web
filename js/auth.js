@@ -21,6 +21,56 @@
   let mode = "login";
   let client = null;
   const toastTimers = new WeakMap();
+  function applyLoginBranding() {
+    const login = cfg.LOGIN || {};
+    const panel = $("authBrandPanel");
+    const media = $("loginHeroMedia");
+    const figure = $("loginHeroFigure");
+
+    const clamp01 = (value, fallback) => {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return fallback;
+      return Math.max(0, Math.min(1, n));
+    };
+    const safeAsset = (value, fallback) => String(value || fallback).replace(/["\\]/g, "");
+
+    const figureUrl = safeAsset(login.figureImageUrl || login.heroImageUrl, "assets/login/login-hero.png");
+    const backgroundUrl = String(login.backgroundImageUrl || "").trim();
+
+    if (panel) {
+      panel.style.setProperty("--login-overlay-opacity", String(clamp01(login.overlayOpacity ?? 0.70, 0.70)));
+      panel.style.setProperty("--login-figure-left", login.figureLeft || "-6%");
+      panel.style.setProperty("--login-figure-bottom", login.figureBottom || "-2%");
+      panel.style.setProperty("--login-figure-width", login.figureWidth || "114%");
+      panel.style.setProperty("--login-figure-max-width", login.figureMaxWidth || "1260px");
+      panel.style.setProperty("--login-figure-opacity", String(clamp01(login.figureOpacity ?? 1, 1)));
+      panel.style.setProperty("--login-figure-scale", String(Number.isFinite(Number(login.figureScale)) ? Number(login.figureScale) : 1));
+      panel.style.setProperty("--login-figure-mobile-width", login.figureMobileWidth || "84%");
+      panel.style.setProperty("--login-figure-mobile-left", login.figureMobileLeft || "-1%");
+      panel.style.setProperty("--login-figure-mobile-bottom", login.figureMobileBottom || "-2%");
+    }
+    if (media) {
+      if (backgroundUrl) {
+        media.style.backgroundImage = `url("${safeAsset(backgroundUrl, "")}")`;
+        media.style.backgroundPosition = login.heroPosition || "center center";
+        media.style.backgroundSize = login.heroSize || "cover";
+        media.style.opacity = String(clamp01(login.heroOpacity ?? .22, .22));
+      } else {
+        media.style.backgroundImage = "none";
+        media.style.opacity = "0";
+      }
+    }
+    if (figure) {
+      figure.src = figureUrl;
+      figure.decoding = "async";
+      figure.loading = "eager";
+    }
+    const eyebrow = $("loginHeroEyebrow"), title = $("loginHeroTitle"), subtitle = $("loginHeroSubtitle");
+    if (eyebrow && login.eyebrow) eyebrow.textContent = login.eyebrow;
+    if (title && login.title) title.textContent = login.title;
+    if (subtitle && login.subtitle) subtitle.textContent = login.subtitle;
+  }
+
 
   function toastIcon(kind) {
     return kind === "success" ? "✓" : kind === "error" ? "×" : kind === "warning" ? "!" : "i";
@@ -280,6 +330,7 @@
   });
 
   async function boot() {
+    applyLoginBranding();
     setMode("login");
     if (!configured) {
       showAnonymous("UNCONFIGURED"); googleLogin.disabled = true;

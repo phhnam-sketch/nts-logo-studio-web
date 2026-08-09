@@ -7,25 +7,28 @@
   <meta name="description" content="NTS Logo Studio Pro Web - công cụ đóng dấu ảnh trực quan với tài khoản người dùng." />
   <title>NTS Logo Studio Pro Web</title>
   <link rel="icon" href="assets/brand/logo.png" type="image/png" />
+  <link rel="preload" as="image" href="assets/login/login-hero.png" fetchpriority="high" />
   <link rel="stylesheet" href="assets/styles.css" />
 </head>
 <body>
   <div id="toastStack" class="toast-stack" aria-live="polite" aria-atomic="false"></div>
 
   <main id="authView" class="auth-shell">
-    <section class="auth-brand-panel" aria-label="Giới thiệu NTS Logo Studio">
+    <section id="authBrandPanel" class="auth-brand-panel" aria-label="Giới thiệu NTS Logo Studio">
+      <div id="loginHeroMedia" class="login-hero-media" aria-hidden="true"></div>
+      <img id="loginHeroFigure" class="login-hero-figure" src="assets/login/login-hero.png" alt="" aria-hidden="true" />
       <div class="brand-lockup">
         <img class="brand-logo-image" src="assets/brand/logo.png" alt="NTS" />
         <div>
-          <div class="brand-name">NTS STUDIO</div>
-          <div class="brand-version">GẮN LOGO VIP PRO</div>
+          <div class="brand-name">NTS LOGO STUDIO</div>
+          <div class="brand-version">NTS EDITION</div>
         </div>
       </div>
 
       <div class="brand-hero">
-        <span class="eyebrow">NTS UI</span>
-        <h1>NHÌN SANG PHẢI</h1>
-        <p>Đăng nhập để quản lý phiên làm việc, sử dụng giao diện tối ưu cho desktop, tablet và mobile.</p>
+        <span id="loginHeroEyebrow" class="eyebrow">NTS UI</span>
+        <h1 id="loginHeroTitle">NHÌN SANG PHẢI</h1>
+        <p id="loginHeroSubtitle">Đăng nhập để quản lý phiên làm việc, sử dụng giao diện tối ưu cho desktop, tablet và mobile.</p>
       </div>
 
       <div class="feature-grid">
@@ -60,7 +63,7 @@
         <div class="auth-heading">
           <span class="auth-badge">NTS LOGIN</span>
           <h2 id="authTitle">Chào mừng trở lại</h2>
-          <p id="authSubtitle">Nam Tiên Sinh gắn logo vip pro</p>
+          <p id="authSubtitle">Đăng nhập để tiếp tục vào Logo Studio.</p>
         </div>
 
         <div class="auth-tabs" role="tablist" aria-label="Đăng nhập hoặc đăng ký">
@@ -123,7 +126,7 @@
           Tiếp tục với Google
         </button>
 
-        <p id="authFootnote" class="auth-footnote">Đăng nhập sử dụng nhanh chóng</p>
+        <p id="authFootnote" class="auth-footnote"></p>
       </div>
     </section>
   </main>
@@ -134,8 +137,8 @@
         <button id="mobileLibraryToggle" class="icon-button mobile-only" type="button" aria-label="Mở thư viện">☰</button>
         <img class="brand-logo-image small" src="assets/brand/logo.png" alt="NTS" />
         <div class="app-brand-text">
-          <strong>NTS LOGO</strong>
-          <span>V3.2.1</span>
+          <strong>LOGO STUDIO PRO</strong>
+          <span>WEB V3.4</span>
         </div>
       </div>
 
@@ -318,6 +321,8 @@
               <div class="control-copy"><label for="sizeRange">Kích thước</label><span id="sizeValue">18%</span></div>
               <input id="sizeRange" type="range" min="2" max="80" value="18" />
             </div>
+            <input id="paddingRange" class="hidden" type="range" min="0" max="3000" value="28" aria-hidden="true" tabindex="-1" />
+            <span id="paddingValue" class="hidden" aria-hidden="true">28 px</span>
             <div class="precision-control-group">
               <div class="precision-group-head">
                 <div><strong>KHOẢNG CÁCH LỀ</strong><small>Hai trục độc lập, tính theo kích thước thật của từng ảnh.</small></div>
@@ -387,7 +392,7 @@
               <button id="applySelectedButton" class="secondary-button" type="button">Áp dụng ảnh đã chọn</button>
               <button id="applyAllButton" class="secondary-button" type="button">Áp dụng tất cả</button>
             </div>
-            <div class="smart-apply-note"><strong>SMART APPLY 3.2.1</strong><span>Lề ngang scale theo chiều rộng, lề dọc scale theo chiều cao; Dịch X/Y cũng scale theo đúng trục. Ảnh ngang và ảnh dọc vì vậy giữ bố cục tương đối ổn định mà vẫn cho tinh chỉnh độc lập từng lề.</span></div>
+            <div class="smart-apply-note"><strong>SMART APPLY 3.3</strong><span></span></div>
           </section>
 
           <section class="setting-section export-section">
@@ -395,8 +400,22 @@
               <div class="section-label">XUẤT ẢNH</div>
               <span id="exportSelectionBadge" class="export-badge">0 ảnh</span>
             </div>
+            <div class="export-performance-card">
+              <div class="export-performance-head">
+                <div><strong>Engine xuất V3.3</strong><small></small></div>
+                <span id="exportEngineStatus" class="engine-badge" data-kind="turbo">TURBO</span>
+              </div>
+              <label class="export-mode-field" for="exportSpeedMode">
+                <span>Chế độ tốc độ</span>
+                <select id="exportSpeedMode">
+                  <option value="turbo">Turbo — nhanh nhất</option>
+                  <option value="balanced">Cân bằng</option>
+                  <option value="quality">Chất lượng tối đa</option>
+                </select>
+              </label>
+            </div>
             <label class="toggle-row export-quality-toggle">
-              <span><strong>PNG siêu nét</strong><small>Giữ chi tiết logo/text tốt nhất; file sẽ lớn hơn JPG/WebP.</small></span>
+              <span><strong>PNG siêu nét</strong><small>Giữ chi tiết logo/text tốt nhất; file sẽ lớn hơn JPG/WebP và mã hóa chậm hơn.</small></span>
               <input id="losslessExportToggle" type="checkbox" />
               <span class="toggle-ui"></span>
             </label>
@@ -410,7 +429,7 @@
               <div class="batch-progress-track"><span id="batchProgressBar"></span></div>
               <div id="batchProgressText" class="batch-progress-text">Sẵn sàng xuất.</div>
             </div>
-            <p class="section-note">Máy tính: Chrome/Edge có thể ghi trực tiếp vào thư mục. Điện thoại: app ưu tiên bảng Chia sẻ của hệ điều hành để lưu vào Photos/Gallery; batch lớn nên chia thành nhiều lượt.</p>
+            <p class="section-note"></p>
             <div id="mobileExportHint" class="mobile-export-hint hidden"></div>
           </section>
         </div>
