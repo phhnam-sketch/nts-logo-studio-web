@@ -138,7 +138,7 @@
         <img class="brand-logo-image small" src="assets/brand/logo.png" alt="NTS" />
         <div class="app-brand-text">
           <strong>LOGO STUDIO PRO</strong>
-          <span>WEB V3.9</span>
+          <span>WEB V3.9.2</span>
         </div>
       </div>
 
@@ -189,7 +189,7 @@
             <span class="step-label">01</span>
             <h2>Thư viện ảnh</h2>
           </div>
-          <span id="imageCount" class="count-chip">0 ảnh</span>
+          <div class="v392-library-head-actions"><span id="imageCount" class="count-chip">0 ảnh</span><button id="mobileLibraryClose" class="icon-button mobile-only v392-drawer-close" type="button" aria-label="Đóng thư viện">×</button></div>
         </div>
 
         <label class="drop-zone" id="dropZone" for="imageInput">
@@ -438,7 +438,10 @@
       </aside>
     </div>
 
-    <button id="mobileSettingsToggle" class="mobile-fab mobile-only" type="button">⚙ Thiết lập</button>
+    <div id="mobileStudioToolbar" class="v392-mobile-studio-toolbar mobile-only" aria-label="Công cụ Studio mobile">
+      <button id="mobileLibraryQuick" class="v392-mobile-tool" type="button"><span>▧</span><strong>Thư viện</strong></button>
+      <button id="mobileSettingsToggle" class="v392-mobile-tool" type="button"><span>⚙</span><strong>Tinh chỉnh</strong></button>
+    </div>
     </section>
 
     <section id="profilePage" class="app-page account-page hidden">
@@ -785,6 +788,7 @@
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <script src="js/ui-v36.js"></script>
   <script src="js/ui-v37.js"></script>
+  <script src="js/mobile-v392.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

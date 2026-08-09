@@ -1725,3 +1725,82 @@ input[type="range"]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;b
   .v36-membership-hero h1{font-size:clamp(34px,10.5vw,48px)!important;line-height:1.01!important}
   .v36-current-membership{width:100%;min-width:0!important}.v36-current-membership.v39-current-vip:before,.v36-current-membership.v39-current-admin:before{right:12px}
 }
+
+
+/* ========================================================================== */
+/* V3.9.2 — MOBILE INTERACTION HOTFIX                                         */
+/* Library visibility + collision-free Messenger / Studio controls            */
+/* ========================================================================== */
+.v392-library-head-actions{display:flex;align-items:center;gap:7px}
+.v392-drawer-close{border:1px solid rgba(113,26,55,.10)!important;background:#f8eaf0!important;color:#7d1d42!important;font-size:20px!important;font-weight:700!important}
+.v392-mobile-studio-toolbar{display:none!important}
+
+@media(max-width:900px){
+  /* Persistent, obvious Studio controls. No more hidden Library workflow. */
+  .v392-mobile-studio-toolbar{
+    position:fixed;left:10px;right:76px;bottom:calc(76px + env(safe-area-inset-bottom));z-index:2450;
+    height:52px;padding:5px;display:grid!important;grid-template-columns:1fr 1fr;gap:5px;
+    border:1px solid rgba(255,255,255,.20);border-radius:17px;
+    background:linear-gradient(135deg,rgba(83,16,40,.97),rgba(147,39,78,.96));
+    box-shadow:0 15px 38px rgba(59,8,29,.28);backdrop-filter:blur(15px);-webkit-backdrop-filter:blur(15px);
+  }
+  .v392-mobile-tool{
+    min-width:0;border:0;border-radius:12px;background:transparent;color:rgba(255,255,255,.88);
+    display:flex;align-items:center;justify-content:center;gap:7px;touch-action:manipulation;cursor:pointer;
+    font:inherit;transition:background .15s ease,transform .12s ease;
+  }
+  .v392-mobile-tool span{font-size:16px}.v392-mobile-tool strong{font-size:10px;letter-spacing:.01em}
+  .v392-mobile-tool:active{transform:scale(.97);background:rgba(255,255,255,.14)}
+
+  /* Old standalone settings FAB no longer floats on top of Messenger. */
+  #mobileSettingsToggle.mobile-fab{position:static!important;right:auto!important;bottom:auto!important;z-index:auto!important;min-height:0!important;padding:0!important;border-radius:12px!important;box-shadow:none!important;background:transparent!important}
+
+  /* Library drawer becomes a real mobile sheet and stays above Studio/nav. */
+  .library-panel.mobile-open{
+    display:flex!important;position:fixed!important;z-index:4100!important;
+    top:calc(66px + env(safe-area-inset-top))!important;left:8px!important;right:8px!important;width:auto!important;
+    bottom:calc(72px + env(safe-area-inset-bottom))!important;max-height:none!important;
+    border-radius:20px!important;background:rgba(255,253,253,.985)!important;
+    box-shadow:0 28px 78px rgba(44,7,23,.34)!important;overflow:hidden!important;
+  }
+  .library-panel.mobile-open .image-list{min-height:0;flex:1;overflow:auto;-webkit-overflow-scrolling:touch}
+  .settings-panel.mobile-open{z-index:4100!important;bottom:calc(72px + env(safe-area-inset-bottom))!important}
+  body.v392-drawer-open{overflow:hidden}
+
+  /* Messenger gets its own non-overlapping lane and always receives taps. */
+  .v38-messenger-dock{
+    right:10px!important;bottom:calc(76px + env(safe-area-inset-bottom))!important;z-index:4300!important;
+    pointer-events:none!important;contain:none!important;
+  }
+  .v38-messenger-dock > *{pointer-events:auto!important}
+  .v38-messenger-launcher{
+    width:56px!important;height:56px!important;position:relative!important;z-index:4302!important;
+    pointer-events:auto!important;touch-action:manipulation!important;-webkit-tap-highlight-color:transparent;
+  }
+  .v38-messenger-launcher.v392-pressed{transform:scale(.94)!important}
+  .v38-messenger-panel{
+    z-index:4303!important;pointer-events:auto!important;touch-action:pan-y;
+    left:8px!important;right:8px!important;bottom:calc(140px + env(safe-area-inset-bottom))!important;
+    width:auto!important;max-height:min(68vh,620px)!important;
+  }
+  .v38-messenger-quick-list,.v38-messenger-contact,.v37-chat-contact,.v37-member-actions button{
+    pointer-events:auto!important;touch-action:manipulation!important;-webkit-tap-highlight-color:transparent;
+  }
+  .v38-messenger-windows{
+    z-index:4310!important;pointer-events:none!important;bottom:calc(76px + env(safe-area-inset-bottom))!important;
+  }
+  .v38-chat-window{pointer-events:auto!important;position:relative!important;z-index:4311!important}
+  .v38-chat-window button,.v38-chat-window textarea{pointer-events:auto!important;touch-action:manipulation}
+
+  /* Bottom app navigation remains lower than Studio controls / Messenger. */
+  .app-nav{z-index:2300!important}
+  .mobile-fab{z-index:2450!important}
+}
+
+@media(max-width:560px){
+  .v392-mobile-studio-toolbar{left:8px;right:72px;bottom:calc(74px + env(safe-area-inset-bottom));height:50px}
+  .v38-messenger-dock{right:8px!important;bottom:calc(74px + env(safe-area-inset-bottom))!important}
+  .v38-messenger-launcher{width:52px!important;height:52px!important}
+  .v38-messenger-panel{bottom:calc(134px + env(safe-area-inset-bottom))!important;max-height:66vh!important}
+  .library-panel.mobile-open{left:6px!important;right:6px!important;bottom:calc(68px + env(safe-area-inset-bottom))!important}
+}
