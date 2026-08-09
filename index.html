@@ -138,7 +138,7 @@
         <img class="brand-logo-image small" src="assets/brand/logo.png" alt="NTS" />
         <div class="app-brand-text">
           <strong>LOGO STUDIO PRO</strong>
-          <span>WEB V3.9.2</span>
+          <span>WEB V3.10</span>
         </div>
       </div>
 
@@ -484,9 +484,9 @@
                   <div class="profile-position-controls v36-position-controls">
                     <label><span>Ngang X</span><input id="avatarPosX" type="range" min="0" max="100" value="50"><b id="avatarPosXValue">50%</b></label>
                     <label><span>Dọc Y</span><input id="avatarPosY" type="range" min="0" max="100" value="50"><b id="avatarPosYValue">50%</b></label>
-                    <label><span>Zoom</span><input id="avatarZoom" type="range" min="100" max="220" value="100"><b id="avatarZoomValue">100%</b></label>
+                    <label><span>Zoom</span><input id="avatarZoom" type="range" min="35" max="500" value="100"><b id="avatarZoomValue">100%</b></label>
                   </div>
-                  <div class="media-editor-actions"><button id="centerAvatarButton" class="secondary-button compact" type="button">Căn giữa</button><button id="removeAvatarButton" class="text-button danger-text" type="button">Xóa ảnh</button></div>
+                  <div class="media-editor-actions v310-transform-actions"><button class="secondary-button compact" type="button" data-profile-command="avatar-fit">Vừa ảnh</button><button class="secondary-button compact" type="button" data-profile-command="avatar-fill">Phủ khung</button><button id="centerAvatarButton" class="secondary-button compact" type="button">Căn giữa</button><button class="text-button" type="button" data-profile-command="avatar-reset">Reset</button><button id="removeAvatarButton" class="text-button danger-text" type="button">Xóa ảnh</button></div>
                 </div>
                 <div id="avatarEmptyHint" class="v36-media-empty"><span>＋</span><p>Chọn ảnh để mở trình căn vị trí.</p></div>
               </section>
@@ -502,9 +502,9 @@
                   <div class="profile-position-controls v36-position-controls">
                     <label><span>Ngang X</span><input id="coverPosX" type="range" min="0" max="100" value="50"><b id="coverPosXValue">50%</b></label>
                     <label><span>Dọc Y</span><input id="coverPosY" type="range" min="0" max="100" value="50"><b id="coverPosYValue">50%</b></label>
-                    <label><span>Zoom</span><input id="coverZoom" type="range" min="100" max="220" value="100"><b id="coverZoomValue">100%</b></label>
+                    <label><span>Zoom</span><input id="coverZoom" type="range" min="35" max="500" value="100"><b id="coverZoomValue">100%</b></label>
                   </div>
-                  <div class="media-editor-actions"><button id="centerCoverButton" class="secondary-button compact" type="button">Căn giữa</button><button id="removeCoverButton" class="text-button danger-text" type="button">Xóa ảnh</button></div>
+                  <div class="media-editor-actions v310-transform-actions"><button class="secondary-button compact" type="button" data-profile-command="cover-fit">Vừa ảnh</button><button class="secondary-button compact" type="button" data-profile-command="cover-fill">Phủ khung</button><button id="centerCoverButton" class="secondary-button compact" type="button">Căn giữa</button><button class="text-button" type="button" data-profile-command="cover-reset">Reset</button><button id="removeCoverButton" class="text-button danger-text" type="button">Xóa ảnh</button></div>
                 </div>
                 <div id="coverEmptyHint" class="v36-media-empty"><span>＋</span><p>Chọn ảnh để mở trình căn vị trí.</p></div>
               </section>
@@ -779,6 +779,7 @@
   <script src="js/config.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/membership.js"></script>
+  <script src="js/profile-transform.js"></script>
   <script src="js/profile.js"></script>
   <script src="js/admin.js"></script>
   <script src="js/community.js"></script>

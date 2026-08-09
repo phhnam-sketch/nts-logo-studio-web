@@ -90,8 +90,8 @@
   function mediaAdjust(kind) {
     const p = state.profile || defaults();
     return kind === "avatar"
-      ? { x: clamp(p.avatar_pos_x,0,100,50), y: clamp(p.avatar_pos_y,0,100,50), zoom: clamp(p.avatar_zoom,100,220,100) }
-      : { x: clamp(p.cover_pos_x,0,100,50), y: clamp(p.cover_pos_y,0,100,50), zoom: clamp(p.cover_zoom,100,220,100) };
+      ? { x: clamp(p.avatar_pos_x,0,100,50), y: clamp(p.avatar_pos_y,0,100,50), zoom: clamp(p.avatar_zoom,35,500,100) }
+      : { x: clamp(p.cover_pos_x,0,100,50), y: clamp(p.cover_pos_y,0,100,50), zoom: clamp(p.cover_zoom,35,500,100) };
   }
   function applyMediaAdjust(kind) {
     const a = mediaAdjust(kind);
@@ -149,6 +149,7 @@
     if ($("menuDisplayName")) $("menuDisplayName").textContent = p.display_name || "Người dùng";
     applyMediaAdjust("avatar");
     applyMediaAdjust("cover");
+    window.NTS?.profileTransform?.refresh?.();
   }
 
   function imageLoads(url) {
@@ -414,8 +415,8 @@
     });
     $(kind === "avatar" ? "centerAvatarButton" : "centerCoverButton")?.addEventListener("click", () => {
       state.profile = { ...defaults(), ...(state.profile || {}) };
-      if (kind === "avatar") Object.assign(state.profile, { avatar_pos_x:50, avatar_pos_y:50, avatar_zoom:100 });
-      else Object.assign(state.profile, { cover_pos_x:50, cover_pos_y:50, cover_zoom:100 });
+      if (kind === "avatar") Object.assign(state.profile, { avatar_pos_x:50, avatar_pos_y:50 });
+      else Object.assign(state.profile, { cover_pos_x:50, cover_pos_y:50 });
       applyMediaAdjust(kind);
       mediaStatus("Đã căn giữa. Bấm “Lưu thay đổi” để ghi nhớ.", "pending");
     });

@@ -75,6 +75,31 @@
     return value.length > max ? `${value.slice(0, max - 1)}…` : value;
   }
 
+
+  function avatarUrl(member) {
+    const raw = String(member?.avatar_url || "").trim();
+    if (!raw) return fallbackAvatar();
+    if (!raw.includes("/storage/v1/object/public/profile-media/")) return raw;
+    if (!member?.avatar_version) return raw;
+    try {
+      const u = new URL(raw, window.location.href);
+      const version = new Date(member.avatar_version).getTime();
+      u.searchParams.set("v", String(Number.isFinite(version) ? version : member.avatar_version));
+      return u.href;
+    } catch (_) {
+      const joiner = raw.includes("?") ? "&" : "?";
+      return `${raw}${joiner}v=${encodeURIComponent(member.avatar_version)}`;
+    }
+  }
+
+  async function rpcWithFallback(primary, fallback, args) {
+    const first = await client().rpc(primary, args);
+    if (!first.error) return first;
+    const message = String(first.error?.message || "");
+    if (!/function|schema cache|does not exist|PGRST202/i.test(message)) return first;
+    return client().rpc(fallback, args);
+  }
+
   function setTab(tab) {
     state.activeTab = ["people", "chat", "feedback"].includes(tab) ? tab : "people";
     document.querySelectorAll(".v37-community-tab").forEach(btn => btn.classList.toggle("active", btn.dataset.communityTab === state.activeTab));
@@ -88,27 +113,36 @@
     const wrap = document.createElement("div");
     wrap.className = `${compact ? "v37-member-avatar compact" : "v37-member-avatar"} v39-avatar-role-${roleClass(member)}${isOnline(id) ? " is-online" : ""}`;
     wrap.dataset.userId = id || "";
+    const frame = document.createElement("span");
+    frame.className = "v310-avatar-frame";
     const img = document.createElement("img");
     img.alt = member?.display_name ? `Ảnh đại diện ${member.display_name}` : "Ảnh đại diện";
     img.decoding = "async";
     img.loading = "lazy";
-    img.src = member?.avatar_url || fallbackAvatar();
-    img.onerror = () => { img.onerror = null; img.src = fallbackAvatar(); };
+    img.src = avatarUrl(member);
+    const px = Math.max(0, Math.min(100, Number(member?.avatar_pos_x ?? 50)));
+    const py = Math.max(0, Math.min(100, Number(member?.avatar_pos_y ?? 50)));
+    const pz = Math.max(35, Math.min(500, Number(member?.avatar_zoom ?? 100)));
+    img.style.objectPosition = `${px}% ${py}%`;
+    img.style.setProperty("--v310-avatar-zoom", String(pz / 100));
+    img.onerror = () => { img.onerror = null; img.src = fallbackAvatar(); img.style.objectPosition = "50% 50%"; img.style.setProperty("--v310-avatar-zoom", "1"); };
+    frame.append(img);
     const badge = document.createElement("span");
     badge.className = `v37-role-dot ${roleClass(member)}`;
     badge.textContent = roleLabel(member);
     badge.title = roleLabel(member);
     const online = document.createElement("i");
     online.className = "v38-online-dot";
-    online.title = isOnline(id) ? "Đang hoạt động" : "Ngoại tuyến";
-    wrap.append(img, badge, online);
+    online.title = "Online";
+    wrap.append(frame, badge);
+    if (isOnline(id)) wrap.append(online);
     return wrap;
   }
 
   function updatePresenceUi() {
     const onlineCount = state.directory.filter(m => isOnline(m.user_id)).length;
     if ($("communityOnlineCount")) $("communityOnlineCount").textContent = `${onlineCount} online`;
-    if ($("messengerOnlineCount")) $("messengerOnlineCount").textContent = `${state.messengerContacts.filter(m => isOnline(m.peer_id)).length} đang hoạt động`;
+    if ($("messengerOnlineCount")) $("messengerOnlineCount").textContent = `${state.messengerContacts.filter(m => isOnline(m.peer_id)).length} online`;
     renderDirectory();
     renderContacts();
     renderMessengerPanel();
@@ -118,7 +152,7 @@
   async function loadDirectory(search = "") {
     if (!state.user || !client()) return;
     try {
-      const { data, error } = await client().rpc("list_member_directory", { p_search: search.trim(), p_limit: 60 });
+      const { data, error } = await rpcWithFallback("list_member_directory_v310", "list_member_directory", { p_search: search.trim(), p_limit: 60 });
       if (error) throw error;
       state.directory = Array.isArray(data) ? data : [];
       renderDirectory();
@@ -133,7 +167,7 @@
   async function loadMessengerContacts({ silent = false } = {}) {
     if (!state.user || !client()) return;
     try {
-      const { data, error } = await client().rpc("list_messenger_contacts", { p_limit: 60 });
+      const { data, error } = await rpcWithFallback("list_messenger_contacts_v310", "list_messenger_contacts", { p_limit: 60 });
       if (error) throw error;
       state.messengerContacts = Array.isArray(data) ? data : [];
       state.unread = state.messengerContacts.reduce((sum, x) => sum + Number(x.unread_count || 0), 0);
@@ -167,7 +201,7 @@
       const name = document.createElement("strong"); name.textContent = member.display_name || "Hội viên";
       const meta = document.createElement("span");
       const base = member.role === "admin" ? "Quản trị viên NTS" : member.is_vip ? "Hội viên VIP" : "Hội viên Free";
-      meta.textContent = isOnline(member.user_id) ? `● Đang hoạt động · ${base}` : base;
+      meta.textContent = base;
       copy.append(name, meta); identity.append(copy); card.append(identity);
       const actions = document.createElement("div"); actions.className = "v37-member-actions";
       if (member.friendship_status === "accepted") {
@@ -245,7 +279,7 @@
       const copy = document.createElement("span");
       const strong = document.createElement("strong"); strong.textContent = member.display_name || "Hội viên";
       const small = document.createElement("small");
-      small.textContent = isOnline(id) ? "Đang hoạt động" : member.last_message ? truncate(member.last_message, 38) : roleLabel(member);
+      small.textContent = member.last_message ? truncate(member.last_message, 38) : roleLabel(member);
       copy.append(strong, small); btn.append(copy);
       if (Number(member.unread_count || 0) > 0) { const badge = document.createElement("b"); badge.className = "v38-contact-unread"; badge.textContent = String(member.unread_count); btn.append(badge); }
       btn.addEventListener("click", () => openChat(member)); root.append(btn);
@@ -281,7 +315,7 @@
   async function getMemberPublic(id) {
     const found = findMember(id); if (found) return found;
     try {
-      const { data, error } = await client().rpc("get_member_public_profile", { p_user: id });
+      const { data, error } = await rpcWithFallback("get_member_public_profile_v310", "get_member_public_profile", { p_user: id });
       if (error) throw error;
       const row = Array.isArray(data) ? data[0] : data;
       return row ? normalizeContact({ ...row, peer_id: row.user_id }) : null;
@@ -297,7 +331,7 @@
       head.replaceChildren();
       const left = document.createElement("div"); left.className = "v37-chat-peer"; left.append(memberAvatar(member, true));
       const copy = document.createElement("div"); const strong = document.createElement("strong"); strong.textContent = member.display_name;
-      const small = document.createElement("span"); small.textContent = isOnline(member.user_id) ? "● Đang hoạt động" : member.role === "admin" ? "Quản trị viên · Tin nhắn riêng tư" : `${roleLabel(member)} · Tin nhắn riêng tư`;
+      const small = document.createElement("span"); small.textContent = member.role === "admin" ? "Quản trị viên · Tin nhắn riêng tư" : `${roleLabel(member)} · Tin nhắn riêng tư`;
       copy.append(strong, small); left.append(copy); head.append(left);
       const floating = document.createElement("button"); floating.type = "button"; floating.className = "secondary-button compact"; floating.textContent = "Mở cửa sổ chat"; floating.addEventListener("click", () => openFloatingChat(member)); head.append(floating);
     }
@@ -581,7 +615,7 @@
       const btn = document.createElement("button"); btn.type = "button"; btn.className = `v38-messenger-contact${Number(row.unread_count || 0) ? " unread" : ""}`;
       btn.append(memberAvatar(member, true));
       const copy = document.createElement("span"); const top = document.createElement("strong"); top.textContent = member.display_name || "Hội viên";
-      const last = document.createElement("small"); last.textContent = isOnline(id) ? `● Đang hoạt động${row.last_message ? ` · ${truncate(row.last_message, 32)}` : ""}` : row.last_message ? truncate(row.last_message, 42) : roleLabel(member);
+      const last = document.createElement("small"); last.textContent = row.last_message ? truncate(row.last_message, 42) : roleLabel(member);
       copy.append(top, last); btn.append(copy);
       if (Number(row.unread_count || 0) > 0) { const b = document.createElement("b"); b.textContent = String(row.unread_count); btn.append(b); }
       btn.addEventListener("click", () => { toggleMessengerPanel(false); openFloatingChat(member); });
@@ -624,7 +658,7 @@
     const el = document.createElement("section"); el.className = "v38-chat-window"; el.dataset.peerId = id;
     const header = document.createElement("header"); header.className = "v38-chat-window-head";
     const peer = document.createElement("button"); peer.type = "button"; peer.className = "v38-chat-window-peer"; peer.append(memberAvatar(member, true));
-    const copy = document.createElement("span"); const strong = document.createElement("strong"); strong.textContent = member.display_name || "Hội viên"; const small = document.createElement("small"); small.textContent = isOnline(id) ? "Đang hoạt động" : roleLabel(member); copy.append(strong, small); peer.append(copy);
+    const copy = document.createElement("span"); const strong = document.createElement("strong"); strong.textContent = member.display_name || "Hội viên"; const small = document.createElement("small"); small.textContent = roleLabel(member); copy.append(strong, small); peer.append(copy);
     const controls = document.createElement("div"); controls.className = "v38-chat-window-controls";
     const minimize = document.createElement("button"); minimize.type = "button"; minimize.title = "Thu nhỏ"; minimize.textContent = "−";
     const close = document.createElement("button"); close.type = "button"; close.title = "Đóng"; close.textContent = "×"; controls.append(minimize, close); header.append(peer, controls);
@@ -670,7 +704,7 @@
   function closeAllFloatingWindows() { [...state.floatingWindows.keys()].forEach(closeFloatingWindow); }
   function updateFloatingWindowHeader(id) {
     const entry = state.floatingWindows.get(String(id)); if (!entry) return;
-    const small = entry.el.querySelector(".v38-chat-window-peer small"); if (small) small.textContent = isOnline(id) ? "Đang hoạt động" : roleLabel(entry.member);
+    const small = entry.el.querySelector(".v38-chat-window-peer small"); if (small) small.textContent = roleLabel(entry.member);
     const avatar = entry.el.querySelector(".v37-member-avatar"); avatar?.classList.toggle("is-online", isOnline(id));
   }
 
@@ -752,6 +786,13 @@
   });
   window.addEventListener("nts:membership-updated", e => { state.account = e.detail?.account || null; });
   window.addEventListener("beforeunload", () => stopGlobalRealtime());
+
+  window.addEventListener("nts:profile-saved", () => {
+    if (!state.user) return;
+    if (state.pageOpen) loadDirectory(document.getElementById("communityMemberSearch")?.value || "");
+    loadMessengerContacts({ silent: true });
+  });
+
   window.addEventListener("online", () => { if (state.user) startGlobalRealtime(); });
 
   if (NTS.currentUser) { state.user = NTS.currentUser; startGlobalRealtime(); }
