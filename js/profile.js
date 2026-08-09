@@ -95,14 +95,31 @@
   }
   function applyMediaAdjust(kind) {
     const a = mediaAdjust(kind);
-    const img = $(kind === "avatar" ? "profileAvatarPreview" : "profileCoverPreview");
-    if (img) {
+    const ids = kind === "avatar" ? ["profileAvatarPreview", "avatarEditorPreview"] : ["profileCoverPreview", "coverEditorPreview"];
+    ids.forEach(id => {
+      const img = $(id);
+      if (!img) return;
       img.style.objectPosition = `${a.x}% ${a.y}%`;
       img.style.setProperty("--profile-media-zoom", String(a.zoom / 100));
-    }
+    });
     const prefix = kind === "avatar" ? "avatar" : "cover";
     [[`${prefix}PosX`, a.x],[`${prefix}PosY`, a.y],[`${prefix}Zoom`, a.zoom]].forEach(([id,val]) => { if ($(id)) $(id).value = String(val); });
     [[`${prefix}PosXValue`, `${Math.round(a.x)}%`],[`${prefix}PosYValue`, `${Math.round(a.y)}%`],[`${prefix}ZoomValue`, `${Math.round(a.zoom)}%`]].forEach(([id,val]) => { if ($(id)) $(id).textContent = val; });
+  }
+
+  function hasEditableMedia(kind) {
+    const p = state.profile || defaults();
+    if (state.previewUrls[kind] || state.runtimeUrls[kind]) return true;
+    if (kind === "avatar") return Boolean(p.avatar_url || state.user?.user_metadata?.avatar_url || state.user?.user_metadata?.picture);
+    return Boolean(p.cover_url);
+  }
+
+  function syncEditorVisibility(kind) {
+    const prefix = kind === "avatar" ? "avatar" : "cover";
+    const has = hasEditableMedia(kind);
+    $(`${prefix}EditorBody`)?.classList.toggle("hidden", !has);
+    $(`${prefix}EmptyHint`)?.classList.toggle("hidden", has);
+    $(`${prefix}MediaEditor`)?.classList.toggle("has-media", has);
   }
 
   function render() {
@@ -117,6 +134,10 @@
     const cover = effectiveMedia("cover");
     setImg("profileAvatarPreview", avatar, brandFallback("avatar"));
     setImg("profileCoverPreview", cover, brandFallback("cover"));
+    setImg("avatarEditorPreview", avatar, brandFallback("avatar"));
+    setImg("coverEditorPreview", cover, brandFallback("cover"));
+    syncEditorVisibility("avatar");
+    syncEditorVisibility("cover");
     if ($("userAvatarImage")) {
       setImg("userAvatarImage", avatar, brandFallback("avatar"));
       $("userAvatarImage").classList.remove("hidden");
@@ -345,7 +366,7 @@
     const token = ++state.prepareTokens[kind];
     render();
     mediaStatus(`${kind === "avatar" ? "Ảnh đại diện" : "Ảnh bìa"} đã hiển thị. Bạn có thể chỉnh vị trí ngay; hệ thống đang tối ưu file nền...`, "pending");
-    window.setTimeout(() => {
+    const prepareInBackground = () => {
       normalizeProfileImage(file, kind).then(normalized => {
         if (state.prepareTokens[kind] !== token) return;
         state.preparedMedia[kind] = { file, normalized };
@@ -355,7 +376,9 @@
         console.warn("profile pre-prepare failed", error);
         mediaStatus("Preview vẫn dùng được; ảnh sẽ được tối ưu lại khi bấm Lưu.", "pending");
       });
-    }, 40);
+    };
+    if ("requestIdleCallback" in window) window.requestIdleCallback(prepareInBackground, { timeout: 900 });
+    else window.setTimeout(prepareInBackground, 140);
   }
   function markRemove(kind) {
     state[kind === "avatar" ? "removeAvatar" : "removeCover"] = true;
@@ -369,6 +392,7 @@
   }
 
   $("profileForm")?.addEventListener("submit", save);
+  $("saveProfileButtonTop")?.addEventListener("click", () => $("profileForm")?.requestSubmit());
   $("profileAvatarInput")?.addEventListener("change", e => previewFile(e.target.files?.[0], "avatar"));
   $("profileCoverInput")?.addEventListener("change", e => previewFile(e.target.files?.[0], "cover"));
   $("removeAvatarButton")?.addEventListener("click", () => markRemove("avatar"));

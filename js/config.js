@@ -25,9 +25,8 @@
 window.APP_CONFIG = {
   SUPABASE_URL: "https://jzmiqadildvtzdpldquw.supabase.co",
   SUPABASE_PUBLISHABLE_KEY: "sb_publishable___QvvAoa-1g7xxiPYXvFaw_r5vTMQ8Q",
-
   APP_NAME: "NTS Logo Studio Pro Web",
-  APP_VERSION: "3.5.0",
+  APP_VERSION: "3.6.0",
 
   BRAND: {
     shortName: "NTS",

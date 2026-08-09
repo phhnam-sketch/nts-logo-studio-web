@@ -228,18 +228,25 @@
       if (!data?.ok || !data?.checkoutUrl) throw new Error(data?.error || "Không tạo được đơn payOS.");
       state.autoPaymentId = data.paymentId || null;
       state.autoCheckoutUrl = data.checkoutUrl;
+      window.dispatchEvent(new CustomEvent("nts:payment-created", { detail: data }));
       if ($("autoPaymentOrderCode")) $("autoPaymentOrderCode").textContent = String(data.orderCode || "—");
       if ($("autoPaymentState")) $("autoPaymentState").textContent = "Đang chờ đủ tiền";
       $("autoPaymentResult")?.classList.remove("hidden");
       if ($("autoPayBadge")) { $("autoPayBadge").textContent = "ĐANG CHỜ"; $("autoPayBadge").dataset.kind = "pending"; }
       toast("QR tự động đã sẵn sàng", `${money(data.amount)} · ${data.months} tháng. Sau khi payOS xác nhận đủ tiền, VIP sẽ tự mở.`, "success", 7000);
-      window.open(data.checkoutUrl, "_blank", "noopener,noreferrer");
+      if (!data.qrPayload) window.open(data.checkoutUrl, "_blank", "noopener,noreferrer");
       startPaymentPolling(true);
       await loadPaymentHistory({ silent: true });
     } catch (error) {
       console.error(error);
       const msg = String(error?.message || error);
-      toast("Không tạo được thanh toán tự động", msg.includes("PAYOS_NOT_CONFIGURED") ? "Chưa cấu hình Secrets payOS trên Supabase." : msg, "error", 9000);
+      const friendly = msg.includes("PAYOS_NOT_CONFIGURED")
+        ? "Chưa cấu hình Secrets payOS trên Supabase."
+        : /failed to send a request|functionsfetcherror/i.test(msg)
+          ? "Không gọi được Edge Function `create-payos-payment`. Kiểm tra function có endpoint /functions/v1/create-payos-payment và Verify JWT with legacy secret = OFF."
+          : msg;
+      window.dispatchEvent(new CustomEvent("nts:payment-error", { detail: { error, message: friendly } }));
+      toast("Không tạo được thanh toán tự động", friendly, "error", 9000);
       if ($("autoPayBadge")) { $("autoPayBadge").textContent = "CHƯA SẴN SÀNG"; $("autoPayBadge").dataset.kind = "error"; }
     } finally { if (btn) { btn.disabled = false; btn.textContent = "Tạo QR thanh toán tự động"; } }
   }
@@ -302,6 +309,8 @@
     const { data, error } = result;
     if (error) { if (!silent) wrap.innerHTML = '<p class="muted">Không tải được lịch sử thanh toán.</p>'; return []; }
     const rows = data || [];
+    const latestProvider = rows.find(r => r.payment_provider === "payos") || null;
+    window.dispatchEvent(new CustomEvent("nts:payment-status", { detail: { row: latestProvider } }));
     const latestAuto = rows.find(r => r.payment_provider === "payos" && r.status === "pending");
     if (latestAuto?.checkout_url) { state.autoPaymentId = latestAuto.id; state.autoCheckoutUrl = latestAuto.checkout_url; $("autoPaymentResult")?.classList.remove("hidden"); if ($("autoPaymentOrderCode")) $("autoPaymentOrderCode").textContent = String(latestAuto.provider_order_code || latestAuto.reference || "—"); }
     if ($("autoPaymentState") && latestAuto) {
@@ -370,7 +379,7 @@
   });
   window.addEventListener("beforeunload", stopPaymentPolling);
 
-  NTS.membership = { state, refreshAccount, beginExport, finishExport, cancelExport, openPage, loadSettings, loadPaymentHistory, money, dateTime };
+  NTS.membership = { state, refreshAccount, beginExport, finishExport, cancelExport, openPage, loadSettings, loadPaymentHistory, money, dateTime, createAutoPayment, renderVipPage, renderPaymentPlan };
   if (NTS.currentUser) {
     state.user = NTS.currentUser;
     loadSettings().then(() => { regenerateOrderCode(); renderVipPage(); return refreshAccount(); });
