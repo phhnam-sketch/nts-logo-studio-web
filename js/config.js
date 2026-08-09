@@ -48,8 +48,8 @@ window.APP_CONFIG = {
     heroOpacity: 1,
     overlayOpacity: 0.70,
     eyebrow: "NTS UI",
-    title: "NHÌN SANG PHẢI",
-    subtitle: "Đăng nhập để quản lý phiên làm việc, sử dụng giao diện tối ưu cho desktop, tablet và mobile."
+    title: "NAM TIÊN SINH",
+    subtitle: "Dùng đi chần chờ gì nữa"
   },
 
   MEMBERSHIP: {
