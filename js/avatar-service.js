@@ -43,20 +43,38 @@
     return [...new Set(values.filter(Boolean))];
   }
 
+  async function signedAvatar(member) {
+    const id = uidOf(member);
+    if (!id || !NTS.supabase?.storage) return null;
+    const path = String(member?.avatar_storage_path || `${id}/avatar.jpg`).trim();
+    try {
+      const { data, error } = await NTS.supabase.storage.from("profile-media").createSignedUrl(path, 3600);
+      if (error) return null;
+      return data?.signedUrl ? addVersion(data.signedUrl, member?.avatar_version || member?.updated_at) : null;
+    } catch (_) { return null; }
+  }
+
   function bindImage(img, member, { lazy = true } = {}) {
     if (!img) return;
     const list = candidates(member);
     const id = uidOf(member);
     let index = 0;
+    let signedTried = false;
     img.decoding = "async";
     if (lazy) img.loading = "lazy";
     img.alt ||= member?.display_name ? `Ảnh đại diện ${member.display_name}` : "Ảnh đại diện";
     const set = () => { img.src = list[index] || fallback(); };
-    img.onerror = () => {
+    img.onerror = async () => {
       const failed = list[index];
-      if (id && failed && canonicalAvatar(member) && failed.split("?")[0] === canonicalAvatar(member)?.split("?")[0]) failedCanonical.add(id);
+      const canonical = canonicalAvatar(member);
+      if (id && failed && canonical && failed.split("?")[0] === canonical.split("?")[0]) failedCanonical.add(id);
       index += 1;
       if (index < list.length) return set();
+      if (!signedTried) {
+        signedTried = true;
+        const signed = await signedAvatar(member);
+        if (signed) { img.src = signed; return; }
+      }
       img.onerror = null;
       img.src = fallback();
     };
@@ -76,5 +94,5 @@
 
   function invalidate(userId) { if (userId) failedCanonical.delete(String(userId)); }
 
-  NTS.avatar = { fallback, uidOf, roleClass, roleLabel, addVersion, canonicalAvatar, candidates, bindImage, invalidate };
+  NTS.avatar = { fallback, uidOf, roleClass, roleLabel, addVersion, canonicalAvatar, signedAvatar, candidates, bindImage, invalidate };
 })();

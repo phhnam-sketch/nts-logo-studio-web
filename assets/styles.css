@@ -2014,3 +2014,18 @@ body.profile-media-modal-open{overflow:hidden}
   .v311-media-controls label{grid-template-columns:72px minmax(0,1fr) 46px;gap:8px}
   .v311-media-modal-actions{display:grid;grid-template-columns:1fr 1fr}.v311-media-modal-actions>*{width:100%!important;justify-content:center!important;margin:0!important}.v311-media-modal-actions .danger-text{grid-column:1/-1}
 }
+
+
+/* ========================================================================== */
+/* V3.11.1 AVATAR LINK + FACEBOOK MEDIA INTEGRATION HOTFIX                    */
+/* ========================================================================== */
+.v311-profile-hero .v311-cover-viewport{pointer-events:auto}
+.v311-profile-hero .v311-cover-viewport>.profile-cover{pointer-events:none}
+.v311-profile-hero .profile-identity{position:relative;z-index:3}
+.profile-avatar-large-frame.v311-avatar-viewport{display:block;flex:0 0 auto}
+.profile-avatar-large-frame.v311-avatar-viewport>.profile-avatar-large{pointer-events:none}
+.profile-camera-button{pointer-events:auto!important}
+.v311-media-save-row{display:flex;justify-content:flex-end;gap:10px;align-items:center}
+.v311-media-save-row .primary-button,.v311-media-save-row .secondary-button{min-width:120px}
+.v37-member-avatar .v310-avatar-frame>img{display:block!important;opacity:1!important}
+@media(max-width:760px){.v311-media-save-row{position:sticky;bottom:-18px;padding:12px 0 2px;background:linear-gradient(180deg,rgba(255,246,249,0),rgba(255,246,249,.98) 28%)}}
