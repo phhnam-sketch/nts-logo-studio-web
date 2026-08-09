@@ -138,7 +138,7 @@
         <img class="brand-logo-image small" src="assets/brand/logo.png" alt="NTS" />
         <div class="app-brand-text">
           <strong>LOGO STUDIO PRO</strong>
-          <span>WEB V3.7</span>
+          <span>WEB V3.8</span>
         </div>
       </div>
 
@@ -530,7 +530,7 @@
       <div class="page-container v37-community-shell">
         <div class="v37-page-title-row">
           <div><span class="v37-kicker">NTS COMMUNITY</span><h1>Kết nối hội viên</h1><p>Kết bạn, nhắn tin trực tiếp và gửi phản hồi cho quản trị viên mà không ảnh hưởng engine xử lý ảnh.</p></div>
-          <div class="v37-community-status"><span class="status-dot"></span><strong>Realtime</strong><small>Chỉ kết nối khi bạn mở Cộng đồng</small></div>
+          <div class="v37-community-status"><span class="status-dot"></span><strong>Realtime</strong><small>Tin nhắn nền · <b id="communityOnlineCount">0 online</b></small></div>
         </div>
 
         <div class="v37-community-tabs" role="tablist">
@@ -693,6 +693,23 @@
     <div id="suspendedOverlay" class="suspended-overlay hidden"><div><span>!</span><h2>Tài khoản tạm bị khóa</h2><p>Quản trị viên đã tạm ngưng quyền sử dụng Logo Studio. Hãy liên hệ hỗ trợ.</p><button id="suspendedLogout" class="secondary-button" type="button">Đăng xuất</button></div></div>
   </main>
 
+
+  <div id="messengerDock" class="v38-messenger-dock hidden" aria-live="polite">
+    <div id="messengerWindows" class="v38-messenger-windows"></div>
+    <aside id="messengerPanel" class="v38-messenger-panel hidden" aria-label="NTS Messenger">
+      <header>
+        <div><span>NTS MESSENGER</span><strong>Tin nhắn</strong><small id="messengerOnlineCount">0 đang hoạt động</small></div>
+        <button id="messengerPanelClose" type="button" aria-label="Ẩn Messenger">×</button>
+      </header>
+      <div id="messengerQuickList" class="v38-messenger-quick-list"><div class="v38-messenger-empty"><strong>Đang tải...</strong></div></div>
+      <button class="v38-open-community" type="button" data-page="communityPage">Mở Cộng đồng đầy đủ</button>
+    </aside>
+    <button id="messengerLauncher" class="v38-messenger-launcher" type="button" aria-label="Mở Messenger">
+      <span class="v38-launcher-icon">💬</span>
+      <b id="messengerUnreadBadge" class="hidden">0</b>
+    </button>
+  </div>
+  <div id="incomingMessageStack" class="v38-incoming-stack" aria-live="polite"></div>
 
   <div id="membershipCheckoutModal" class="modal-backdrop hidden v36-checkout-backdrop" role="dialog" aria-modal="true" aria-labelledby="v36CheckoutTitle">
     <div class="modal-card v36-checkout-modal">
