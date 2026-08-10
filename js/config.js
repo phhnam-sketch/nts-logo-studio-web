@@ -23,8 +23,8 @@
      Các giá trị MEMBERSHIP dưới đây chỉ là fallback hiển thị khi database chưa tải xong.
 */
 window.APP_CONFIG = {
-  SUPABASE_URL: "https://YOUR_PROJECT_ID.supabase.co",
-  SUPABASE_PUBLISHABLE_KEY: "YOUR_SUPABASE_PUBLISHABLE_KEY",
+  SUPABASE_URL: "https://jzmiqadildvtzdpldquw.supabase.co",
+  SUPABASE_PUBLISHABLE_KEY: "sb_publishable___QvvAoa-1g7xxiPYXvFaw_r5vTMQ8Q",
 
   APP_NAME: "NTS Logo Studio Pro Web",
   APP_VERSION: "3.16.1",
