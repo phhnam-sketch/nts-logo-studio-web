@@ -11,141 +11,26 @@
   const dt = v => NTS.membership?.dateTime?.(v) || "—";
   const esc = v => String(v ?? "").replace(/[&<>'"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[c]);
 
-  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-
-  function transientReadError(error) {
-    const message = String(error?.message || error || "").toLowerCase();
-    const status = Number(error?.status || error?.statusCode || error?.context?.status || 0);
-    return error instanceof TypeError
-      || /failed to fetch|networkerror|network error|load failed|fetch failed|timeout|timed out|connection reset|connection closed|gateway/.test(message)
-      || [408, 429, 502, 503, 504, 520, 522, 524].includes(status);
+  async function refresh() {
+    if (NTS.membership?.state?.account?.role !== "admin" || state.loading) return;
+    state.loading = true;
+    try { await Promise.all([loadStats(), loadMembers(), loadPayments(), loadServiceSettings()]); }
+    catch (error) { console.error(error); toast("Không tải được Admin Dashboard", error.message || String(error), "error", 7000); }
+    finally { state.loading = false; }
   }
 
-  async function adminRead(label, operation, attempts = 3) {
-    let lastError = null;
-    for (let attempt = 0; attempt < attempts; attempt += 1) {
-      try {
-        const pending = operation();
-        const result = NTS.health?.withTimeout
-          ? await NTS.health.withTimeout(pending, 9000, label)
-          : await pending;
-        if (result?.error) throw result.error;
-        return result;
-      } catch (error) {
-        lastError = error;
-        if (!transientReadError(error) || attempt >= attempts - 1) throw error;
-        const delay = Math.round(220 * (2 ** attempt) + Math.random() * 120);
-        console.warn(`Admin read retry: ${label} (${attempt + 1}/${attempts})`, error);
-        await sleep(delay);
-      }
-    }
-    throw lastError || new Error(`Không tải được ${label}`);
-  }
-
-  function renderStats() {
+  async function loadStats() {
+    const { data, error } = await client().rpc("admin_stats"); if (error) throw error;
+    state.stats = Array.isArray(data) ? data[0] : data;
     const s = state.stats || {};
     [["statTotalUsers", s.total_users], ["statVipUsers", s.vip_users], ["statFreeUsers", s.free_users], ["statPendingPayments", s.pending_payments]].forEach(([id, v]) => { if ($(id)) $(id).textContent = Number(v || 0).toLocaleString("vi-VN"); });
     if ($("statRevenue")) $("statRevenue").textContent = money(s.approved_revenue_month || 0);
     if ($("statSuspended")) $("statSuspended").textContent = Number(s.suspended_users || 0).toLocaleString("vi-VN");
   }
 
-  async function renderSystemHealth({ force = false } = {}) {
-    const root = $("adminSystemHealth");
-    if (!root) return;
-    const health = await NTS.health?.run?.({ force });
-    const lastError = NTS.health?.state?.lastError;
-    const items = [
-      ["core_ready", "Tài khoản & quota"],
-      ["community_ready", "Cộng đồng & chat"],
-      ["payment_ready", "Thanh toán"],
-      ["avatar_ready", "Avatar đồng bộ"],
-      ["admin_ready", "Quản trị"]
-    ];
-    if (!health) {
-      const info = lastError ? NTS.health?.friendly?.(lastError, "tình trạng hệ thống") : null;
-      root.innerHTML = `<div class="v316-health-summary degraded"><strong>Chưa xác minh được database</strong><span>${esc(info?.message || "Hãy chạy migration repair V3.16 nếu database chưa đồng bộ.")}</span></div>`;
-      if ($("adminSystemHealthVersion")) $("adminSystemHealthVersion").textContent = "Chưa xác minh";
-      return;
-    }
-    const okCount = items.filter(([key]) => health[key] === true).length;
-    root.innerHTML = items.map(([key,label]) => `<div class="v316-health-item ${health[key] ? "ok" : "bad"}"><span>${health[key] ? "✓" : "!"}</span><div><strong>${esc(label)}</strong><small>${health[key] ? "Sẵn sàng" : "Thiếu/lệch schema"}</small></div></div>`).join("");
-    if ($("adminSystemHealthVersion")) $("adminSystemHealthVersion").textContent = `${okCount}/${items.length} module · DB ${esc(health.version || "?")}`;
-  }
-
-  function renderAdminSectionError(section, error) {
-    const msg = esc(error?.message || String(error || "Lỗi kết nối"));
-    if (section === "members") {
-      if ($("adminMembersBody")) $("adminMembersBody").innerHTML = `<tr><td colspan="8" class="table-empty">Không tải được hội viên. Bấm “Làm mới” để thử lại.<br><small>${msg}</small></td></tr>`;
-      if ($("adminMembersMobile")) $("adminMembersMobile").innerHTML = `<div class="empty-admin-card">Không tải được hội viên.<br><small>${msg}</small></div>`;
-    }
-    if (section === "payments" && $("adminPaymentsList")) $("adminPaymentsList").innerHTML = `<div class="empty-admin-card">Không tải được thanh toán. Bấm “Làm mới” để thử lại.<br><small>${msg}</small></div>`;
-  }
-
-  async function loadDashboardBundle() {
-    const search = $("adminMemberSearch")?.value?.trim() || null;
-    const filter = $("adminPaymentFilter")?.value || "pending";
-    try {
-      const { data } = await adminRead("Admin Dashboard", () => client().rpc("admin_dashboard_v316", { p_search: search, p_payment_status: filter }), 3);
-      const bundle = typeof data === "string" ? JSON.parse(data) : data;
-      if (!bundle || typeof bundle !== "object") throw new Error("ADMIN_DASHBOARD_INVALID_RESPONSE");
-      state.stats = bundle.stats || {};
-      state.members = Array.isArray(bundle.members) ? bundle.members : [];
-      state.payments = Array.isArray(bundle.payments) ? bundle.payments : [];
-      renderStats();
-      renderMembers();
-      await renderPayments();
-      applyServiceSettings(bundle.settings || {});
-      return true;
-    } catch (error) {
-      const message = String(error?.message || error || "");
-      if (/admin_dashboard_v316|function|schema cache|does not exist|PGRST202/i.test(message)) return false;
-      console.warn("Bundled Admin Dashboard unavailable; falling back to granular reads", error);
-      return false;
-    }
-  }
-
-  async function refresh() {
-    if (NTS.membership?.state?.account?.role !== "admin" || state.loading) return;
-    state.loading = true;
-    void renderSystemHealth({ force: true });
-    try {
-      const bundled = await loadDashboardBundle();
-      if (bundled) return;
-
-      const failures = [];
-      const tasks = [
-        ["stats", loadStats],
-        ["members", loadMembers],
-        ["payments", loadPayments],
-        ["settings", loadServiceSettings]
-      ].map(async ([name, fn]) => {
-        try { await fn(); }
-        catch (error) {
-          failures.push({ name, error });
-          renderAdminSectionError(name, error);
-        }
-      });
-      await Promise.all(tasks);
-      if (failures.length) {
-        const labels = failures.map(x => x.name).join(", ");
-        const first = failures[0].error;
-        toast("Admin Dashboard tải chưa đầy đủ", `${labels}: ${first?.message || first}. Hệ thống đã tự thử lại nhiều lần; bấm “Làm mới” để thử tiếp.`, "warning", 8000);
-      }
-    } catch (error) {
-      console.error(error);
-      toast("Không tải được Admin Dashboard", error.message || String(error), "error", 7000);
-    } finally { state.loading = false; }
-  }
-
-  async function loadStats() {
-    const { data } = await adminRead("thống kê", () => client().rpc("admin_stats"));
-    state.stats = Array.isArray(data) ? data[0] : data;
-    renderStats();
-  }
-
   async function loadMembers() {
     const search = $("adminMemberSearch")?.value?.trim() || null;
-    const { data } = await adminRead("danh sách hội viên", () => client().rpc("admin_list_members", { p_search: search }));
+    const { data, error } = await client().rpc("admin_list_members", { p_search: search }); if (error) throw error;
     state.members = data || [];
     renderMembers();
   }
@@ -180,21 +65,15 @@
 
   async function loadPayments() {
     const filter = $("adminPaymentFilter")?.value || "pending";
-    const names = ["admin_list_payments_v35", "admin_list_payments_v32", "admin_list_payments"];
-    let lastError = null;
-    for (const name of names) {
-      try {
-        const result = await adminRead(`thanh toán:${name}`, () => client().rpc(name, { p_status: filter }));
-        state.payments = result.data || [];
-        await renderPayments();
-        return;
-      } catch (error) {
-        lastError = error;
-        const message = String(error?.message || error || "");
-        if (!/function|schema cache|does not exist|PGRST202|admin_list_payments/i.test(message)) throw error;
-      }
+    let result = await client().rpc("admin_list_payments_v35", { p_status: filter });
+    if (result.error && /admin_list_payments_v35|schema cache|function/i.test(String(result.error.message || result.error))) {
+      result = await client().rpc("admin_list_payments_v32", { p_status: filter });
     }
-    throw lastError || new Error("Không tải được danh sách thanh toán.");
+    if (result.error && /admin_list_payments_v32|schema cache|function/i.test(String(result.error.message || result.error))) {
+      result = await client().rpc("admin_list_payments", { p_status: filter });
+    }
+    if (result.error) throw result.error;
+    state.payments = result.data || []; await renderPayments();
   }
   async function proofUrl(path) {
     if (!path) return null;
@@ -427,7 +306,7 @@
       console.error(error);
       const msg = String(error?.message || error);
       if (/site-assets|row-level security|policy|column.*payment_qr_url|schema cache/i.test(msg)) {
-        toast("Schema thanh toán chưa sẵn sàng", "Hãy chạy một lần `supabase/017_v3_16_full_system_repair.sql` trong Supabase SQL Editor rồi thử lại.", "error", 9000);
+        toast("Chưa bật Smart QR V3.2", "Hãy chạy migration `supabase/003_v3_2_profile_payment.sql` trong Supabase rồi thử lại.", "error", 9000);
       } else toast("Không cập nhật được QR", msg, "error", 8000);
     } finally { if ($("adminQrInput")) $("adminQrInput").value = ""; }
   }
@@ -438,14 +317,15 @@
     try {
       const { error } = await client().from("site_settings").update({ payment_qr_url: null }).eq("id", true);
       if (error) throw error;
-      try { await client().storage.from("site-assets").remove(["payment/payment-qr.png"]); } catch (_) {}
+      await client().storage.from("site-assets").remove(["payment/payment-qr.png"]).catch(() => {});
       renderAdminQr(null);
       await NTS.membership?.loadSettings?.();
       toast("Đã dùng QR mặc định", "Trang VIP đã quay về QR PNG nằm trong package website.", "success");
     } catch (error) { toast("Không reset được QR", error.message || String(error), "error", 8000); }
   }
 
-  function applyServiceSettings(data = {}) {
+  async function loadServiceSettings() {
+    const { data, error } = await client().from("site_settings").select("*").eq("id", true).single(); if (error) throw error;
     if ($("adminFreeLimit")) $("adminFreeLimit").value = data.free_monthly_limit ?? 10;
     if ($("adminVipPrice")) $("adminVipPrice").value = data.vip_monthly_price ?? 200000;
     if ($("adminBankName")) $("adminBankName").value = data.bank_name || "";
@@ -455,11 +335,6 @@
     if ($("adminSupportText")) $("adminSupportText").value = data.support_text || "";
     renderAdminQr(data.payment_qr_url || null);
     updateServicePreview({ dirty: false });
-  }
-
-  async function loadServiceSettings() {
-    const { data } = await adminRead("cấu hình dịch vụ", () => client().from("site_settings").select("*").eq("id", true).single());
-    applyServiceSettings(data || {});
   }
 
   async function saveServiceSettings(event) {
@@ -491,7 +366,6 @@
   $("adminMemberSearch")?.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadMembers, 320); });
   $("adminPaymentFilter")?.addEventListener("change", loadPayments);
   $("refreshAdminButton")?.addEventListener("click", refresh);
-  $("refreshSystemHealth")?.addEventListener("click", () => renderSystemHealth({ force: true }));
   $("createMemberButton")?.addEventListener("click", openCreateMemberModal);
   $("adminMembersBody")?.addEventListener("click", e => { const b = e.target.closest("[data-admin-edit]"); if (b) openMemberModal(b.dataset.adminEdit); });
   $("adminMembersMobile")?.addEventListener("click", e => { const b = e.target.closest("[data-admin-edit]"); if (b) openMemberModal(b.dataset.adminEdit); });
@@ -508,5 +382,5 @@
   $("resetAdminQr")?.addEventListener("click", resetAdminQr);
 
   window.addEventListener("nts:membership-updated", e => { if (e.detail.account?.role === "admin" && !$("adminPage")?.classList.contains("hidden")) refresh(); });
-  NTS.admin = { state, refresh, loadMembers, loadPayments, loadServiceSettings, openCreateMemberModal, renderSystemHealth };
+  NTS.admin = { state, refresh, loadMembers, loadPayments, loadServiceSettings, openCreateMemberModal };
 })();

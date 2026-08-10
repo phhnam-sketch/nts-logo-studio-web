@@ -14,12 +14,7 @@
     paymentPollTimer: 0,
     pendingPaymentIds: new Set(),
     autoPaymentId: null,
-    autoCheckoutUrl: null,
-    settingsPromise: null,
-    refreshPromise: null,
-    lastAccountAt: 0,
-    lastSettingsAt: 0,
-    accountFingerprint: ""
+    autoCheckoutUrl: null
   };
 
   function client() { return NTS.supabase; }
@@ -42,26 +37,20 @@
     };
   }
 
-  async function loadSettings({ force = false } = {}) {
-    if (!force && state.settings && Date.now() - state.lastSettingsAt < 60000) return state.settings;
-    if (state.settingsPromise) return state.settingsPromise;
-    state.settingsPromise = (async () => {
-      const c = client();
-      if (!c) { state.settings = fallbackSettings(); renderVipPage(); return state.settings; }
-      try {
-        const result = await c.from("site_settings").select("*").eq("id", true).single();
-        if (result?.error) throw result.error;
-        state.settings = { ...fallbackSettings(), ...(result?.data || {}) };
-        state.lastSettingsAt = Date.now();
-      } catch (error) {
-        console.warn("site_settings fallback", error);
-        state.settings = state.settings || fallbackSettings();
-      }
-      if (!state.paymentOrderCode) regenerateOrderCode();
-      renderVipPage();
-      return state.settings;
-    })();
-    try { return await state.settingsPromise; } finally { state.settingsPromise = null; }
+  async function loadSettings() {
+    const c = client();
+    if (!c) { state.settings = fallbackSettings(); renderVipPage(); return state.settings; }
+    try {
+      const { data, error } = await c.from("site_settings").select("*").eq("id", true).single();
+      if (error) throw error;
+      state.settings = { ...fallbackSettings(), ...(data || {}) };
+    } catch (error) {
+      console.warn("site_settings fallback", error);
+      state.settings = fallbackSettings();
+    }
+    if (!state.paymentOrderCode) regenerateOrderCode();
+    renderVipPage();
+    return state.settings;
   }
 
   function defaultAccount() {
@@ -69,69 +58,44 @@
     return { role: "member", plan: "free", status: "active", vip_until: null, is_vip: false, free_limit: s.free_monthly_limit, used: 0, reserved: 0, remaining: s.free_monthly_limit, vip_monthly_price: s.vip_monthly_price };
   }
 
-  function accountKey(account) {
-    const a = account || {};
-    return [a.role,a.plan,a.status,a.vip_until,a.is_vip,a.free_limit,a.used,a.reserved,a.remaining,a.vip_monthly_price].join("|");
-  }
-
-  function publishAccountIfChanged() {
-    const key = accountKey(state.account);
-    if (key === state.accountFingerprint) return;
-    state.accountFingerprint = key;
-    window.dispatchEvent(new CustomEvent("nts:membership-updated", { detail: { account: state.account } }));
-  }
-
-  function applyBootstrapData(data) {
-    if (!data || (data.user_id && state.user?.id && String(data.user_id) !== String(state.user.id))) return false;
-    if (data.settings && typeof data.settings === "object") {
-      state.settings = { ...fallbackSettings(), ...data.settings };
-      state.lastSettingsAt = Date.now();
-      if (!state.paymentOrderCode) regenerateOrderCode();
-      renderVipPage();
-    }
-    if (data.account && typeof data.account === "object") {
-      state.account = { ...defaultAccount(), ...data.account };
-      state.lastAccountAt = Date.now();
-      renderAccount();
-      publishAccountIfChanged();
-    }
-    return Boolean(data.account || data.settings);
-  }
-
-  async function refreshAccount({ silent = false, force = false } = {}) {
+  async function refreshAccount({ silent = false } = {}) {
     const c = client();
     if (!c || !state.user) return null;
-    if (state.refreshPromise) return state.refreshPromise;
-    if (!force && state.account && Date.now() - state.lastAccountAt < 20000) return state.account;
-    state.refreshPromise = (async () => {
-      if (!silent) state.loading = true;
-      try {
-        // supabase-js >=2.102 already retries transient PostgREST failures. Do not
-        // wrap this RPC in Promise.race/app-level retries: those leave zombie requests
-        // running and can amplify a weak connection into a request storm.
-        const result = await c.rpc("get_my_account_state");
-        if (result?.error) throw result.error;
-        const data = result?.data;
-        state.account = Array.isArray(data) ? data[0] : data;
-        if (!state.account) state.account = defaultAccount();
-        state.lastAccountAt = Date.now();
-        renderAccount();
-        publishAccountIfChanged();
-        return state.account;
-      } catch (error) {
-        console.error("refreshAccount", error);
-        if (!state.account) state.account = defaultAccount();
-        renderAccount();
-        if (!silent) {
-          const info = NTS.health?.friendly?.(error, "quyền tài khoản") || { kind:"unknown", title:"Không tải được quyền tài khoản", message:String(error?.message || error) };
-          if (info.kind === "schema") NTS.health?.notifyOnce?.("membership-schema", info.title, info.message, "warning", 10000) || toast(info.title, info.message, "warning", 10000);
-          else if (info.kind === "network") NTS.health?.notifyOnce?.("membership-network", info.title, info.message, "warning", 6500) || toast(info.title, info.message, "warning", 6500);
-          else toast(info.title, info.message, "error", 8000);
+    if (!silent) state.loading = true;
+    try {
+      // V3.16 self-heals a missing profile/membership row without blocking the UI.
+      await NTS.health?.ensureAccount?.();
+      const read = async () => {
+        const request = c.rpc("get_my_account_state");
+        return NTS.health?.withTimeout ? NTS.health.withTimeout(request, 8500, "account state") : request;
+      };
+      const result = NTS.health?.retry
+        ? await NTS.health.retry(read, { attempts: 3 })
+        : await read();
+      if (result?.error) throw result.error;
+      const data = result?.data;
+      state.account = Array.isArray(data) ? data[0] : data;
+      if (!state.account) state.account = defaultAccount();
+      renderAccount();
+      window.dispatchEvent(new CustomEvent("nts:membership-updated", { detail: { account: state.account } }));
+      return state.account;
+    } catch (error) {
+      console.error("refreshAccount", error);
+      // A transient network problem must not demote an ADMIN/VIP UI to FREE.
+      if (!state.account) state.account = defaultAccount();
+      renderAccount();
+      if (!silent) {
+        const info = NTS.health?.friendly?.(error, "quyền tài khoản") || { kind:"unknown", title:"Không tải được quyền tài khoản", message:String(error?.message || error) };
+        if (info.kind === "schema") {
+          NTS.health?.notifyOnce?.("membership-schema", info.title, info.message, "warning", 10000) || toast(info.title, info.message, "warning", 10000);
+        } else if (info.kind === "network") {
+          NTS.health?.notifyOnce?.("membership-network", info.title, info.message, "warning", 6500) || toast(info.title, info.message, "warning", 6500);
+        } else {
+          toast(info.title, info.message, "error", 8000);
         }
-        return state.account;
-      } finally { state.loading = false; }
-    })();
-    try { return await state.refreshPromise; } finally { state.refreshPromise = null; }
+      }
+      return state.account;
+    } finally { state.loading = false; }
   }
 
   function renderAccount() {
@@ -256,8 +220,8 @@
     window.scrollTo({ top: 0, behavior: "smooth" });
     if (pageId === "vipPage") { loadPaymentHistory({ silent: true }); renderVipPage(); startPaymentPolling(); }
     else stopPaymentPolling();
-    if (pageId === "adminPage") NTS.admin?.refresh?.({ force: false });
-    if (pageId === "profilePage") NTS.profile?.refresh?.({ silent: true });
+    if (pageId === "adminPage") NTS.admin?.refresh?.();
+    if (pageId === "profilePage") NTS.profile?.refresh?.();
     window.dispatchEvent(new CustomEvent("nts:page-changed", { detail: { pageId } }));
   }
   document.addEventListener("click", event => {
@@ -433,34 +397,17 @@
   });
   $("refreshPaymentHistory")?.addEventListener("click", async () => { await loadPaymentHistory(); await refreshAccount({ silent: true }); toast("Đã kiểm tra", "Trạng thái thanh toán và quyền VIP đã được làm mới.", "success", 2600); });
 
-  window.addEventListener("nts:auth-user", event => {
+  window.addEventListener("nts:auth-user", async event => {
     state.user = event.detail.user || null;
-    if (!state.user) {
-      state.account = null; state.accountFingerprint = ""; state.paymentOrderCode = "";
-      state.autoPaymentId = null; state.autoCheckoutUrl = null; stopPaymentPolling(); return;
-    }
+    if (!state.user) { state.account = null; state.paymentOrderCode = ""; state.autoPaymentId = null; state.autoCheckoutUrl = null; stopPaymentPolling(); return; }
     state.paymentOrderCode = "";
-    state.settings = state.settings || fallbackSettings();
-    renderVipPage();
-    const boot = NTS.data?.bootstrapData;
-    if (boot && String(boot.user_id || "") === String(state.user.id)) applyBootstrapData(boot);
-    NTS.data?.scheduleBootstrap?.(state.user, 0);
-    // Legacy DB/network fallback only if the consolidated bootstrap did not arrive.
-    NTS.data?.defer?.(`membership-fallback:${state.user.id}`, 4500, async () => {
-      if (!state.settings || state.lastSettingsAt === 0) await loadSettings().catch(() => {});
-      if (!state.account || state.lastAccountAt === 0) await refreshAccount({ silent: true }).catch(() => {});
-    });
-  });
-  window.addEventListener("nts:bootstrap-data", event => {
-    if (state.user) applyBootstrapData(event.detail?.data);
+    await loadSettings(); regenerateOrderCode(); renderVipPage(); await refreshAccount();
   });
   window.addEventListener("beforeunload", stopPaymentPolling);
 
   NTS.membership = { state, refreshAccount, beginExport, finishExport, cancelExport, openPage, loadSettings, loadPaymentHistory, money, dateTime, createAutoPayment, renderVipPage, renderPaymentPlan };
   if (NTS.currentUser) {
     state.user = NTS.currentUser;
-    state.settings = fallbackSettings();
-    renderVipPage();
-    NTS.data?.scheduleBootstrap?.(state.user, 0);
+    loadSettings().then(() => { regenerateOrderCode(); renderVipPage(); return refreshAccount(); });
   } else { state.settings = fallbackSettings(); renderVipPage(); }
 })();

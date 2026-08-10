@@ -1,0 +1,45 @@
+{
+  "js_syntax": {
+    "ok": true,
+    "failures": [],
+    "count": 18
+  },
+  "html": {
+    "id_count": 365,
+    "duplicate_ids": {},
+    "missing_assets": [],
+    "ok": true
+  },
+  "dom_refs": {
+    "static_ref_count": 320,
+    "missing_in_index_or_reset": [],
+    "ok": true
+  },
+  "css": {
+    "open_braces": 1695,
+    "close_braces": 1695,
+    "ok": true
+  },
+  "rpc": {
+    "used_count": 49,
+    "defined_count": 65,
+    "missing_current": [],
+    "ok": true
+  },
+  "sql_static": {
+    "issues": [],
+    "ok": true
+  },
+  "versioning": {
+    "cache_versions": [
+      "3.16.1"
+    ],
+    "ui_version": "3.16.1",
+    "ok": true
+  },
+  "core_files": {
+    "missing": [],
+    "ok": true
+  },
+  "overall_ok": true
+}

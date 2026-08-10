@@ -2,7 +2,7 @@
   "use strict";
   const $ = id => document.getElementById(id);
   const NTS = window.NTS = window.NTS || {};
-  const state = { account:null, feedback:[], history:[], profiles:new Map(), loading:false, refreshPromise:null, lastRefreshAt:0 };
+  const state = { account:null, feedback:[], history:[], profiles:new Map(), loading:false };
   const client=()=>NTS.supabase;
   const toast=(t,m,k="info",d)=>NTS.showToast?.(t,m,k,d);
   const isAdmin=()=>state.account?.role==="admin" && state.account?.status==="active";
@@ -37,22 +37,9 @@
 
   async function addFeedbackNote(){if(!isAdmin()||!client())return;const content=await NTS.dialog?.prompt?.({title:"Thêm ghi chú phản hồi",message:"Tạo một ghi chú quản trị trong lịch sử phản hồi. Có thể chỉnh sửa hoặc lưu trữ sau.",confirmText:"Thêm ghi chú",inputPlaceholder:"Nội dung ghi chú..."});if(content==null)return;const clean=String(content).trim();if(clean.length<2)return toast("Nội dung quá ngắn","Hãy nhập ít nhất 2 ký tự.","warning");try{const userId=NTS.currentUser?.id;if(!userId)throw new Error("Không xác định được tài khoản admin.");const{error}=await client().from("user_feedback").insert({user_id:userId,feedback_type:"comment",content:clean,status:"new"});if(error)throw error;toast("Đã thêm ghi chú","Ghi chú đã được thêm vào lịch sử phản hồi.","success");await loadFeedback();await loadStats();}catch(error){toast("Không thêm được ghi chú",error.message||String(error),"error");}}
 
-  async function refresh({force=false}={}){
-    if(!isAdmin())return;
-    if(!force&&state.lastRefreshAt&&Date.now()-state.lastRefreshAt<15000)return;
-    if(state.refreshPromise)return state.refreshPromise;
-    state.refreshPromise=(async()=>{
-      try{
-        // Keep this secondary admin area out of the critical bootstrap path.
-        await loadStats();
-        await Promise.allSettled([loadFeedback(),loadHistory()]);
-        state.lastRefreshAt=Date.now();
-      }finally{state.refreshPromise=null;}
-    })();
-    return state.refreshPromise;
-  }
-  $("adminFeedbackFilter")?.addEventListener("change",loadFeedback);$("adminAddFeedbackNote")?.addEventListener("click",addFeedbackNote);$("refreshCommunityAdmin")?.addEventListener("click",()=>refresh({force:true}));$("refreshMembershipHistory")?.addEventListener("click",loadHistory);
-  window.addEventListener("nts:membership-updated",e=>{state.account=e.detail?.account||null;if(isAdmin()&&!$("adminPage")?.classList.contains("hidden"))NTS.data?.defer?.("admin-community-membership",1400,()=>refresh({force:false}));});
-  window.addEventListener("nts:page-changed",e=>{if(e.detail?.pageId==="adminPage"&&isAdmin())NTS.data?.defer?.("admin-community-page",1600,()=>refresh({force:false}));});
+  async function refresh(){if(!isAdmin())return;await Promise.allSettled([loadStats(),loadFeedback(),loadHistory()]);}
+  $("adminFeedbackFilter")?.addEventListener("change",loadFeedback);$("adminAddFeedbackNote")?.addEventListener("click",addFeedbackNote);$("refreshCommunityAdmin")?.addEventListener("click",refresh);$("refreshMembershipHistory")?.addEventListener("click",loadHistory);
+  window.addEventListener("nts:membership-updated",e=>{state.account=e.detail?.account||null;if(isAdmin()&&!$("adminPage")?.classList.contains("hidden"))refresh();});
+  window.addEventListener("nts:page-changed",e=>{if(e.detail?.pageId==="adminPage"&&isAdmin())refresh();});
   NTS.adminCommunity={state,refresh,loadFeedback,loadHistory,loadStats};
 })();

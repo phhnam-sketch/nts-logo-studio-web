@@ -24,8 +24,6 @@
     onlineUserIds: new Set(),
     searchTimer: null,
     refreshTimer: null,
-    lastDirectoryAt: 0,
-    lastContactsAt: 0,
     contactRefreshTimer: null,
     sending: false,
     loadingMessages: false,
@@ -35,9 +33,9 @@
     windowOrder: [],
     incomingPreviewTimer: null,
     avatarRefreshTimer: null,
-    directoryPromise: null,
-    contactsPromise: null,
-    globalStartedUserId: null
+    directoryRequestId: 0,
+    contactsRequestId: 0,
+    rpcPreferred: new Map()
   };
 
   function roleLabel(member) { return NTS.avatar?.roleLabel?.(member) || (member?.role === "admin" ? "ADMIN" : member?.is_vip ? "VIP" : "FREE"); }
@@ -88,17 +86,14 @@
 
   function addAvatarVersion(url, version) {
     if (!url || String(url).startsWith("blob:") || String(url).startsWith("data:")) return url;
-    if (version == null || version === "") return String(url);
     try {
       const u = new URL(url, window.location.href);
-      const numeric = Number(version);
-      const dateValue = numeric || new Date(version).getTime();
-      if (!Number.isFinite(dateValue)) return u.href;
-      u.searchParams.set("v", String(dateValue));
+      const stamp = version ? new Date(version).getTime() : Date.now();
+      u.searchParams.set("v", String(Number.isFinite(stamp) ? stamp : version || Date.now()));
       return u.href;
     } catch (_) {
-      const text = String(url);
-      return `${text}${text.includes("?") ? "&" : "?"}v=${encodeURIComponent(version)}`;
+      const joiner = String(url).includes("?") ? "&" : "?";
+      return `${url}${joiner}v=${encodeURIComponent(version || Date.now())}`;
     }
   }
 
@@ -120,19 +115,34 @@
     return rpcCascade([primary, fallback].filter(Boolean), args);
   }
 
-  const rpcPreferred = new Map();
   async function rpcCascade(names, args) {
-    const key = names.filter(Boolean).join("|");
-    const preferred = rpcPreferred.get(key);
-    const ordered = preferred ? [preferred, ...names.filter(name => name && name !== preferred)] : names;
+    const available = names.filter(Boolean);
+    if (!available.length) return { data:null, error:new Error("RPC_NOT_AVAILABLE") };
+    const cacheKey = available.join("|");
+    const preferred = state.rpcPreferred.get(cacheKey);
+    const ordered = preferred && available.includes(preferred)
+      ? [preferred, ...available.filter(name => name !== preferred)]
+      : available;
     let last = { data:null, error:new Error("RPC_NOT_AVAILABLE") };
     for (const name of ordered) {
-      if (!name) continue;
-      const result = await client().rpc(name, args);
-      last = result;
-      if (!result?.error) { rpcPreferred.set(key, name); return result; }
-      const message = String(result.error?.message || "");
-      if (!/function|schema cache|does not exist|PGRST202/i.test(message)) return result;
+      const operation = () => client().rpc(name, args);
+      try {
+        const result = NTS.health?.resilient
+          ? await NTS.health.resilient(operation, { attempts: 2, timeout: 8000, label: name })
+          : await operation();
+        last = result;
+        if (!result?.error) {
+          state.rpcPreferred.set(cacheKey, name);
+          return result;
+        }
+        const message = String(result.error?.message || "");
+        if (!/function|schema cache|does not exist|PGRST202/i.test(message)) return result;
+        if (preferred === name) state.rpcPreferred.delete(cacheKey);
+      } catch (error) {
+        last = { data:null, error };
+        if (!NTS.health?.isSchemaError?.(error)) return last;
+        if (preferred === name) state.rpcPreferred.delete(cacheKey);
+      }
     }
     return last;
   }
@@ -168,7 +178,7 @@
     if (NTS.avatar?.bindImage) NTS.avatar.bindImage(img, member, { lazy:false, hydrate:!member?.avatar_thumb_data });
     else {
       const direct = member?.avatar_url || storageAvatarUrl(member) || fallbackAvatar();
-      img.src = addAvatarVersion(direct, member?.avatar_storage_version || member?.avatar_version || member?.avatar_revision || null);
+      img.src = addAvatarVersion(direct, member?.avatar_storage_version || member?.avatar_version || Date.now());
       img.onerror = () => { img.onerror = null; img.src = fallbackAvatar(); };
     }
     if (Number(member?.avatar_crop_version || 0) >= 1) img.dataset.v311Final = "1";
@@ -195,62 +205,49 @@
     for (const [id] of state.floatingWindows) updateFloatingWindowHeader(id);
   }
 
-  async function loadDirectory(search = "", { force = false, silent = false } = {}) {
-    if (!state.user || !client()) return state.directory;
-    const query = String(search || "").trim();
-    const now = Date.now();
-    if (!force && !query && state.directory.length && now - state.lastDirectoryAt < 15000) {
-      renderDirectory(); renderRequests(); renderContacts();
-      return state.directory;
+  async function loadDirectory(search = "") {
+    if (!state.user || !client()) return;
+    const requestId = ++state.directoryRequestId;
+    try {
+      const { data, error } = await rpcCascade(["list_member_directory_v316","list_member_directory_v3131","list_member_directory_v313","list_member_directory_v312","list_member_directory_v311","list_member_directory_v310"], { p_search: search.trim(), p_limit: 60 });
+      if (error) throw error;
+      if (requestId !== state.directoryRequestId) return;
+      state.directory = Array.isArray(data) ? data : [];
+      renderDirectory();
+      renderRequests();
+      renderContacts();
+      // V3.14: resolve the exact Storage avatar for every visible member in one batch.
+      // UI renders immediately; resolved images replace fallbacks asynchronously.
+      const missingAvatars = state.directory.filter(m => !m?.avatar_thumb_data);
+      if (missingAvatars.length) NTS.avatar?.hydrateMembers?.(missingAvatars).catch?.(() => {});
+    } catch (error) {
+      if (requestId !== state.directoryRequestId) return;
+      console.error("community directory", error);
+      if ($("communityMemberList")) $("communityMemberList").innerHTML = `<div class="v37-empty-state">Không tải được danh bạ: ${escapeHtml(error?.message || "Kiểm tra migration 005.")}</div>`;
     }
-    if (state.directoryPromise) return state.directoryPromise;
-    state.directoryPromise = (async () => {
-      try {
-        const { data, error } = await rpcCascade(["list_member_directory_v316","list_member_directory_v3131","list_member_directory_v313","list_member_directory_v312","list_member_directory_v311","list_member_directory_v310"], { p_search: query, p_limit: 60 });
-        if (error) throw error;
-        state.directory = Array.isArray(data) ? data : [];
-        state.lastDirectoryAt = Date.now();
-        renderDirectory(); renderRequests(); renderContacts();
-        const missingAvatars = state.directory.filter(m => !m?.avatar_thumb_data);
-        if (missingAvatars.length) NTS.avatar?.hydrateMembers?.(missingAvatars).catch?.(() => {});
-        return state.directory;
-      } catch (error) {
-        if (!silent) console.error("community directory", error);
-        if (!state.directory.length && $("communityMemberList")) $("communityMemberList").innerHTML = `<div class="v37-empty-state">Không tải được danh bạ: ${escapeHtml(error?.message || "Kết nối dữ liệu tạm thời gián đoạn.")}</div>`;
-        else { renderDirectory(); renderRequests(); renderContacts(); }
-        return state.directory;
-      } finally { state.directoryPromise = null; }
-    })();
-    return state.directoryPromise;
   }
 
-  async function loadMessengerContacts({ silent = false, force = false } = {}) {
-    if (!state.user || !client()) return state.messengerContacts;
-    const now = Date.now();
-    if (!force && state.messengerContacts.length && now - state.lastContactsAt < 15000) {
-      renderUnread(); renderMessengerPanel(); renderContacts();
-      return state.messengerContacts;
+  async function loadMessengerContacts({ silent = false } = {}) {
+    if (!state.user || !client()) return;
+    const requestId = ++state.contactsRequestId;
+    try {
+      const { data, error } = await rpcCascade(["list_messenger_contacts_v316","list_messenger_contacts_v3131","list_messenger_contacts_v313","list_messenger_contacts_v312","list_messenger_contacts_v311","list_messenger_contacts_v310"], { p_limit: 60 });
+      if (error) throw error;
+      if (requestId !== state.contactsRequestId) return;
+      state.messengerContacts = Array.isArray(data) ? data : [];
+      state.unread = state.messengerContacts.reduce((sum, x) => sum + Number(x.unread_count || 0), 0);
+      renderUnread();
+      renderMessengerPanel();
+      renderContacts();
+      // Same Avatar Hub powers chat list, quick Messenger and floating chat windows.
+      const missingMessengerAvatars = state.messengerContacts.filter(m => !m?.avatar_thumb_data);
+      if (missingMessengerAvatars.length) NTS.avatar?.hydrateMembers?.(missingMessengerAvatars).catch?.(() => {});
+    } catch (error) {
+      if (requestId !== state.contactsRequestId) return;
+      if (!silent) console.error("messenger contacts", error);
+      // Migration 006 may not be installed yet. Fall back to existing directory/unread behavior.
+      await loadUnreadCount();
     }
-    if (state.contactsPromise) return state.contactsPromise;
-    state.contactsPromise = (async () => {
-      try {
-        const { data, error } = await rpcCascade(["list_messenger_contacts_v316","list_messenger_contacts_v3131","list_messenger_contacts_v313","list_messenger_contacts_v312","list_messenger_contacts_v311","list_messenger_contacts_v310"], { p_limit: 60 });
-        if (error) throw error;
-        state.messengerContacts = Array.isArray(data) ? data : [];
-        state.lastContactsAt = Date.now();
-        state.unread = state.messengerContacts.reduce((sum, x) => sum + Number(x.unread_count || 0), 0);
-        renderUnread(); renderMessengerPanel(); renderContacts();
-        const missing = state.messengerContacts.filter(m => !m?.avatar_thumb_data);
-        if (missing.length) NTS.avatar?.hydrateMembers?.(missing).catch?.(() => {});
-        return state.messengerContacts;
-      } catch (error) {
-        if (!silent) console.error("messenger contacts", error);
-        if (!state.messengerContacts.length) await loadUnreadCount();
-        else { renderUnread(); renderMessengerPanel(); renderContacts(); }
-        return state.messengerContacts;
-      } finally { state.contactsPromise = null; }
-    })();
-    return state.contactsPromise;
   }
 
   function renderDirectory() {
@@ -689,7 +686,7 @@
         const patch = payload?.new || null;
         applyPublicProfileRealtime(patch);
         const changedId = String(patch?.user_id || "");
-        if (changedId) NTS.avatar?.hydrateMembers?.([{ user_id:changedId }], { force:false }).catch?.(() => {});
+        if (changedId) NTS.avatar?.hydrateMembers?.([{ user_id:changedId }], { force:true }).catch?.(() => {});
       })
       .subscribe();
   }
@@ -714,7 +711,8 @@
       .on("presence", { event: "sync" }, () => {
         const raw = channel.presenceState(); const next = new Set();
         Object.values(raw || {}).flat().forEach(p => { if (p?.user_id) next.add(String(p.user_id)); });
-        state.onlineUserIds = next; updatePresenceUi();
+        const unchanged = next.size === state.onlineUserIds.size && [...next].every(id => state.onlineUserIds.has(id));
+        if (!unchanged) { state.onlineUserIds = next; updatePresenceUi(); }
       })
       .subscribe(async status => {
         if (status !== "SUBSCRIBED") return;
@@ -919,29 +917,23 @@
     stopAvatarRefresh();
     state.avatarRefreshTimer = setInterval(() => {
       if (!state.user || document.visibilityState !== "visible") return;
-      if (state.pageOpen) loadDirectory($("communityMemberSearch")?.value || "", { silent:true });
+      if (state.pageOpen) loadDirectory($("communityMemberSearch")?.value || "");
       loadMessengerContacts({ silent:true });
-    }, 300000);
+    }, 120000);
   }
 
-  function startGlobalRealtime({ force = false } = {}) {
+  function startGlobalRealtime() {
     if (!state.user || !client()) return;
-    const uid = String(state.user.id || "");
-    if (!force && state.globalStartedUserId === uid && (state.messageChannel || state.presenceChannel || state.publicProfileChannel)) {
-      $("messengerDock")?.classList.remove("hidden");
-      return;
-    }
-    state.globalStartedUserId = uid;
     $("messengerDock")?.classList.remove("hidden");
-    subscribeMessages(); subscribePresence(); subscribePublicProfiles(); startAvatarRefresh();
-    NTS.data?.defer?.("community-contacts", 900, () => loadMessengerContacts({ silent:true }));
+    subscribeMessages(); subscribePresence(); subscribePublicProfiles(); loadMessengerContacts({ silent: true }); startAvatarRefresh();
   }
   function stopGlobalRealtime() {
     closeMessageChannel(); closePresenceChannel(); closePublicProfileChannel(); closeFriendshipChannel(); closeAllFloatingWindows(); stopAvatarRefresh();
-    state.globalStartedUserId = null; state.messengerContacts = []; state.unread = 0; renderUnread(); toggleMessengerPanel(false); $("messengerDock")?.classList.add("hidden");
+    state.directoryRequestId += 1; state.contactsRequestId += 1;
+    state.messengerContacts = []; state.unread = 0; renderUnread(); toggleMessengerPanel(false); $("messengerDock")?.classList.add("hidden");
   }
   function enterCommunity() {
-    if (!state.user) return; state.pageOpen = true; loadDirectory($("communityMemberSearch")?.value || ""); loadMessengerContacts({ silent:true }); subscribeFriendships(); if (state.activeTab === "feedback") loadMyFeedback();
+    if (!state.user) return; state.pageOpen = true; loadDirectory($("communityMemberSearch")?.value || ""); loadMessengerContacts({ silent: true }); subscribeFriendships(); if (state.activeTab === "feedback") loadMyFeedback();
   }
   function leaveCommunity() { state.pageOpen = false; closeFriendshipChannel(); }
 
@@ -959,10 +951,9 @@
   window.addEventListener("nts:page-changed", e => { const page = e.detail?.pageId; if (page === "communityPage") enterCommunity(); else leaveCommunity(); });
   window.addEventListener("nts:profile-saved", () => {
     if (!state.user) return;
-    NTS.data?.defer?.("community-profile-sync", 450, () => {
-      if (state.pageOpen) loadDirectory($("communityMemberSearch")?.value || "", { force:true, silent:true });
-      loadMessengerContacts({ force:true, silent:true });
-    });
+    // Refresh visible community surfaces so saved avatars/crops propagate immediately.
+    loadDirectory($("communityMemberSearch")?.value || "");
+    loadMessengerContacts({ silent: true });
   });
   window.addEventListener("nts:avatar-resolved", e => {
     const member = e.detail?.member;
@@ -972,7 +963,7 @@
   window.addEventListener("nts:auth-user", e => {
     state.user = e.detail?.user || null;
     if (!state.user) { stopGlobalRealtime(); state.directory = []; closeChat(); }
-    else NTS.data?.defer?.("community-realtime", 750, () => startGlobalRealtime());
+    else startGlobalRealtime();
   });
   window.addEventListener("nts:membership-updated", e => { state.account = e.detail?.account || null; });
   window.addEventListener("beforeunload", () => stopGlobalRealtime());
@@ -980,12 +971,11 @@
 
   window.addEventListener("visibilitychange", () => {
     if (!state.user || document.visibilityState !== "visible") return;
-    const now = Date.now();
-    if (state.pageOpen && now - state.lastDirectoryAt > 15000) loadDirectory($("communityMemberSearch")?.value || "");
-    if (now - state.lastContactsAt > 15000) loadMessengerContacts({ silent:true });
+    if (state.pageOpen) loadDirectory($("communityMemberSearch")?.value || "");
+    loadMessengerContacts({ silent:true });
   });
-  window.addEventListener("online", () => { if (state.user) NTS.data?.defer?.("community-online", 600, () => startGlobalRealtime()); });
+  window.addEventListener("online", () => { if (state.user) startGlobalRealtime(); });
 
-  if (NTS.currentUser) { state.user = NTS.currentUser; NTS.data?.defer?.("community-startup", 850, () => startGlobalRealtime()); }
+  if (NTS.currentUser) { state.user = NTS.currentUser; startGlobalRealtime(); }
   NTS.community = { state, loadDirectory, loadMessengerContacts, openChat, openFloatingChat, setTab, toggleMessengerPanel };
 })();

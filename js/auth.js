@@ -20,12 +20,7 @@
 
   let mode = "login";
   let client = null;
-  let lastAuthUserId = null;
-  let lastAuthDispatchAt = 0;
-  let pendingAuthDispatchTimer = 0;
-  let pendingAuthDomReady = null;
   const toastTimers = new WeakMap();
-  const recentToastSignatures = new Map();
   function applyLoginBranding() {
     const login = cfg.LOGIN || {};
     const panel = $("authBrandPanel");
@@ -90,15 +85,6 @@
   }
 
   function showToast(title, message, kind = "info", duration = 4300) {
-    const signature = `${kind}|${String(title || "")}|${String(message || "")}`;
-    const duplicateWindow = (kind === "error" || kind === "warning") ? 7000 : 2500;
-    const lastShown = recentToastSignatures.get(signature) || 0;
-    if (Date.now() - lastShown < duplicateWindow) return null;
-    recentToastSignatures.set(signature, Date.now());
-    if (recentToastSignatures.size > 40) {
-      const cutoff = Date.now() - 30000;
-      for (const [key, at] of recentToastSignatures) if (at < cutoff) recentToastSignatures.delete(key);
-    }
     const stack = $("toastStack") || document.body;
     const el = document.createElement("article");
     el.className = `toast ${kind}`;
@@ -166,42 +152,9 @@
     dialog: { confirm: (opts={}) => systemDialog(opts), prompt: (opts={}) => systemDialog({ ...opts, input: true }) }
   });
 
-  function dispatchUser(user, event = "SIGNED_IN", { force = false } = {}) {
-    const next = user || null;
-    const id = next?.id || null;
-    window.NTS.currentUser = next;
-    const now = Date.now();
-    const passive = event === "TOKEN_REFRESHED";
-    const duplicateBoot = id && id === lastAuthUserId && (event === "INITIAL_SESSION" || event === "SIGNED_IN") && (now - lastAuthDispatchAt < 2500);
-    if (!force && (passive && id === lastAuthUserId || duplicateBoot)) return false;
-    if (!id && lastAuthUserId === null && !force && now - lastAuthDispatchAt < 1200) return false;
-    lastAuthUserId = id;
-    lastAuthDispatchAt = now;
-    window.dispatchEvent(new CustomEvent("nts:auth-user", { detail: { user: next, event } }));
-    return true;
-  }
-
-  // Supabase documents a deadlock when an API call is started from inside
-  // onAuthStateChange. All app modules listen to nts:auth-user and some of them
-  // immediately query Supabase, so this event MUST be dispatched on a later task.
-  function scheduleDispatchUser(user, event = "SIGNED_IN", { force = false } = {}) {
-    const next = user || null;
-    window.NTS.currentUser = next;
-    if (pendingAuthDispatchTimer) clearTimeout(pendingAuthDispatchTimer);
-    const run = () => {
-      pendingAuthDispatchTimer = 0;
-      dispatchUser(next, event, { force });
-    };
-    if (document.readyState === "loading") {
-      if (pendingAuthDomReady) document.removeEventListener("DOMContentLoaded", pendingAuthDomReady);
-      pendingAuthDomReady = () => {
-        pendingAuthDomReady = null;
-        pendingAuthDispatchTimer = setTimeout(run, 0);
-      };
-      document.addEventListener("DOMContentLoaded", pendingAuthDomReady, { once: true });
-    } else {
-      pendingAuthDispatchTimer = setTimeout(run, 0);
-    }
+  function dispatchUser(user, event = "SIGNED_IN") {
+    window.NTS.currentUser = user || null;
+    window.dispatchEvent(new CustomEvent("nts:auth-user", { detail: { user: user || null, event } }));
   }
 
   function setMode(nextMode) {
@@ -269,7 +222,7 @@
     authView.classList.add("hidden");
     appView.classList.remove("hidden");
     document.title = `${cfg.APP_NAME || "NTS Logo Studio Pro Web"} · Studio`;
-    scheduleDispatchUser(user, event);
+    dispatchUser(user, event);
   }
 
   function showAnonymous(event = "SIGNED_OUT") {
@@ -278,7 +231,7 @@
     userMenu?.classList.add("hidden");
     userMenuButton?.setAttribute("aria-expanded", "false");
     document.title = cfg.APP_NAME || "NTS Logo Studio Pro Web";
-    scheduleDispatchUser(null, event);
+    dispatchUser(null, event);
   }
 
   function authErrorMessage(error) {
@@ -391,36 +344,15 @@
     }
     try {
       client = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_PUBLISHABLE_KEY, {
-        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
-        // Current Supabase guidance recommends worker heartbeats for background tabs.
-        realtime: {
-          worker: true,
-          heartbeatCallback: (status) => {
-            window.dispatchEvent(new CustomEvent("nts:realtime-heartbeat", { detail: { status } }));
-            if (status === "disconnected") {
-              setTimeout(() => { try { client?.realtime?.connect?.(); } catch (_) {} }, 250);
-            }
-          }
-        }
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
       });
       window.NTS.supabase = client;
       const { data, error } = await client.auth.getSession();
       if (error) throw error;
       if (data.session?.user) showAuthenticated(data.session.user, "INITIAL_SESSION"); else showAnonymous("INITIAL_SESSION");
       client.auth.onAuthStateChange((event, session) => {
-        if (event === "SIGNED_OUT" || !session?.user) { showAnonymous(event); return; }
-        if (event === "TOKEN_REFRESHED") {
-          window.NTS.currentUser = session.user;
-          updateBaseUserUI(session.user);
-          return;
-        }
-        if (event === "USER_UPDATED") {
-          window.NTS.currentUser = session.user;
-          updateBaseUserUI(session.user);
-          window.dispatchEvent(new CustomEvent("nts:user-metadata-updated", { detail: { user: session.user } }));
-          return;
-        }
-        if (["SIGNED_IN", "INITIAL_SESSION"].includes(event)) showAuthenticated(session.user, event);
+        if (event === "SIGNED_OUT" || !session?.user) showAnonymous(event);
+        else if (["SIGNED_IN", "TOKEN_REFRESHED", "USER_UPDATED", "INITIAL_SESSION"].includes(event)) showAuthenticated(session.user, event);
       });
     } catch (error) { showAnonymous("ERROR"); showToast("Lỗi kết nối Supabase", authErrorMessage(error), "error", 8500); }
   }
