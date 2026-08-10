@@ -51,7 +51,8 @@
     });
   }
   function cacheBust(url, stamp) {
-    if (!url || String(url).startsWith("blob:")) return url;
+    if (!url || String(url).startsWith("blob:") || String(url).startsWith("data:")) return url;
+    if (!stamp) return url;
     try {
       const parsed = new URL(url, window.location.href);
       parsed.searchParams.set("v", String(stamp || Date.now()));
@@ -84,9 +85,9 @@
     if (transient) return transient;
     if (kind === "avatar") {
       const raw = p.avatar_url || state.user?.user_metadata?.avatar_url || state.user?.user_metadata?.picture || null;
-      return raw ? cacheBust(raw, p.updated_at || Date.now()) : brandFallback("avatar");
+      return raw ? cacheBust(raw, p.avatar_revision || p.updated_at || null) : brandFallback("avatar");
     }
-    return p.cover_url ? cacheBust(p.cover_url, p.updated_at || Date.now()) : brandFallback("cover");
+    return p.cover_url ? cacheBust(p.cover_url, p.cover_revision || p.updated_at || null) : brandFallback("cover");
   }
 
   function clamp(v, min, max, fallback) {
@@ -212,14 +213,27 @@
     }
   }
 
+  function applyBootstrapProfile(data) {
+    const profile = data?.profile;
+    if (!profile || !state.user) return false;
+    if (data.user_id && String(data.user_id) !== String(state.user.id)) return false;
+    state.profile = { ...defaults(), ...profile };
+    state.lastRefreshAt = Date.now();
+    state.removeAvatar = false; state.removeCover = false;
+    render();
+    runInBackground(selfHealAvatarThumb, "avatar thumbnail self-heal");
+    return true;
+  }
+
   async function refresh({ silent = false, force = false } = {}) {
     if (!state.user || !client()) return null;
     if (state.refreshPromise) return state.refreshPromise;
-    if (!force && silent && state.profile && Date.now() - state.lastRefreshAt < 5000) return state.profile;
+    if (!force && state.profile && Date.now() - state.lastRefreshAt < 30000) return state.profile;
     state.refreshPromise = (async () => {
       try {
-        const request = client().from("profiles").select("*").eq("id", state.user.id).single();
-        const result = NTS.health?.withTimeout ? await NTS.health.withTimeout(request, 8500, "profile") : await request;
+        // Let the pinned supabase-js/PostgREST retry transient network failures.
+        // App-level Promise.race timeouts could leave the original request alive.
+        const result = await client().from("profiles").select("*").eq("id", state.user.id).single();
         if (result?.error) throw result.error;
         state.profile = { ...defaults(), ...(result?.data || {}) };
         state.lastRefreshAt = Date.now();
@@ -790,10 +804,23 @@
     const next = e.detail.user || null;
     if (state.user?.id && next?.id !== state.user.id) revokeAllTransient();
     state.user = next;
-    if (state.user) refresh();
-    else { state.profile = null; revokeAllTransient(); }
+    if (!state.user) { state.profile = null; state.lastRefreshAt = 0; revokeAllTransient(); return; }
+    const boot = NTS.data?.bootstrapData;
+    if (boot && String(boot.user_id || "") === String(state.user.id)) applyBootstrapProfile(boot);
+    NTS.data?.scheduleBootstrap?.(state.user, 0);
+    NTS.data?.defer?.(`profile-fallback:${state.user.id}`, 5000, () => {
+      if (!state.profile) refresh({ silent: true }).catch(() => {});
+    });
+  });
+  window.addEventListener("nts:bootstrap-data", e => {
+    if (state.user) applyBootstrapProfile(e.detail?.data);
   });
   window.addEventListener("beforeunload", revokeAllTransient);
   NTS.profile = { state, refresh, saveMediaCrop, removeMedia, getMediaSourceUrl, hasSavedMedia, getSavedCrop, canonicalMediaUrl };
-  if (NTS.currentUser) { state.user = NTS.currentUser; refresh(); }
+  if (NTS.currentUser) {
+    state.user = NTS.currentUser;
+    const boot = NTS.data?.bootstrapData;
+    if (boot) applyBootstrapProfile(boot);
+    NTS.data?.scheduleBootstrap?.(state.user, 0);
+  }
 })();

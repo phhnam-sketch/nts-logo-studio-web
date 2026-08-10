@@ -22,7 +22,10 @@
   let client = null;
   let lastAuthUserId = null;
   let lastAuthDispatchAt = 0;
+  let pendingAuthDispatchTimer = 0;
+  let pendingAuthDomReady = null;
   const toastTimers = new WeakMap();
+  const recentToastSignatures = new Map();
   function applyLoginBranding() {
     const login = cfg.LOGIN || {};
     const panel = $("authBrandPanel");
@@ -87,6 +90,15 @@
   }
 
   function showToast(title, message, kind = "info", duration = 4300) {
+    const signature = `${kind}|${String(title || "")}|${String(message || "")}`;
+    const duplicateWindow = (kind === "error" || kind === "warning") ? 7000 : 2500;
+    const lastShown = recentToastSignatures.get(signature) || 0;
+    if (Date.now() - lastShown < duplicateWindow) return null;
+    recentToastSignatures.set(signature, Date.now());
+    if (recentToastSignatures.size > 40) {
+      const cutoff = Date.now() - 30000;
+      for (const [key, at] of recentToastSignatures) if (at < cutoff) recentToastSignatures.delete(key);
+    }
     const stack = $("toastStack") || document.body;
     const el = document.createElement("article");
     el.className = `toast ${kind}`;
@@ -169,6 +181,29 @@
     return true;
   }
 
+  // Supabase documents a deadlock when an API call is started from inside
+  // onAuthStateChange. All app modules listen to nts:auth-user and some of them
+  // immediately query Supabase, so this event MUST be dispatched on a later task.
+  function scheduleDispatchUser(user, event = "SIGNED_IN", { force = false } = {}) {
+    const next = user || null;
+    window.NTS.currentUser = next;
+    if (pendingAuthDispatchTimer) clearTimeout(pendingAuthDispatchTimer);
+    const run = () => {
+      pendingAuthDispatchTimer = 0;
+      dispatchUser(next, event, { force });
+    };
+    if (document.readyState === "loading") {
+      if (pendingAuthDomReady) document.removeEventListener("DOMContentLoaded", pendingAuthDomReady);
+      pendingAuthDomReady = () => {
+        pendingAuthDomReady = null;
+        pendingAuthDispatchTimer = setTimeout(run, 0);
+      };
+      document.addEventListener("DOMContentLoaded", pendingAuthDomReady, { once: true });
+    } else {
+      pendingAuthDispatchTimer = setTimeout(run, 0);
+    }
+  }
+
   function setMode(nextMode) {
     mode = nextMode;
     const registering = mode === "register";
@@ -234,7 +269,7 @@
     authView.classList.add("hidden");
     appView.classList.remove("hidden");
     document.title = `${cfg.APP_NAME || "NTS Logo Studio Pro Web"} · Studio`;
-    dispatchUser(user, event);
+    scheduleDispatchUser(user, event);
   }
 
   function showAnonymous(event = "SIGNED_OUT") {
@@ -243,7 +278,7 @@
     userMenu?.classList.add("hidden");
     userMenuButton?.setAttribute("aria-expanded", "false");
     document.title = cfg.APP_NAME || "NTS Logo Studio Pro Web";
-    dispatchUser(null, event);
+    scheduleDispatchUser(null, event);
   }
 
   function authErrorMessage(error) {
@@ -356,7 +391,17 @@
     }
     try {
       client = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_PUBLISHABLE_KEY, {
-        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+        // Current Supabase guidance recommends worker heartbeats for background tabs.
+        realtime: {
+          worker: true,
+          heartbeatCallback: (status) => {
+            window.dispatchEvent(new CustomEvent("nts:realtime-heartbeat", { detail: { status } }));
+            if (status === "disconnected") {
+              setTimeout(() => { try { client?.realtime?.connect?.(); } catch (_) {} }, 250);
+            }
+          }
+        }
       });
       window.NTS.supabase = client;
       const { data, error } = await client.auth.getSession();

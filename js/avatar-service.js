@@ -76,14 +76,17 @@
 
   function addVersion(url, version) {
     if (!url || /^(blob:|data:)/i.test(String(url))) return url;
+    if (version == null || version === "") return String(url);
     try {
       const u = new URL(String(url), window.location.href);
-      const raw = version instanceof Date ? version.getTime() : (Number(version) || new Date(version || Date.now()).getTime());
-      u.searchParams.set("v", String(Number.isFinite(raw) ? raw : Date.now()));
+      const numeric = Number(version);
+      const parsed = version instanceof Date ? version.getTime() : (numeric || new Date(version).getTime());
+      if (!Number.isFinite(parsed)) return u.href;
+      u.searchParams.set("v", String(parsed));
       return u.href;
     } catch (_) {
       const text = String(url);
-      return `${text}${text.includes("?") ? "&" : "?"}v=${encodeURIComponent(version || Date.now())}`;
+      return `${text}${text.includes("?") ? "&" : "?"}v=${encodeURIComponent(version)}`;
     }
   }
 
@@ -515,8 +518,8 @@
 
   window.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible") return;
-    const ids = [...bound.keys()];
-    if (ids.length) hydrateMembers(ids.map(user_id => ({ user_id })), { force:false });
+    const ids = [...bound.keys()].filter(id => !cacheRow(id) && !resolvedUrlCache.has(id));
+    if (ids.length) NTS.data?.defer?.("avatar-visible-hydrate", 1200, () => hydrateMembers(ids.map(user_id => ({ user_id })), { force:false }));
   });
 
   setInterval(forgetDetached, 60000);
