@@ -21,13 +21,13 @@
       || [408, 429, 502, 503, 504, 520, 522, 524].includes(status);
   }
 
-  async function adminRead(label, operation, attempts = 3) {
+  async function adminRead(label, operation, attempts = 2) {
     let lastError = null;
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       try {
         const pending = operation();
         const result = NTS.health?.withTimeout
-          ? await NTS.health.withTimeout(pending, 9000, label)
+          ? await NTS.health.withTimeout(pending, 12000, label)
           : await pending;
         if (result?.error) throw result.error;
         return result;
@@ -85,7 +85,7 @@
     const search = $("adminMemberSearch")?.value?.trim() || null;
     const filter = $("adminPaymentFilter")?.value || "pending";
     try {
-      const { data } = await adminRead("Admin Dashboard", () => client().rpc("admin_dashboard_v316", { p_search: search, p_payment_status: filter }), 3);
+      const { data } = await adminRead("Admin Dashboard", () => client().rpc("admin_dashboard_v316", { p_search: search, p_payment_status: filter }), 2);
       const bundle = typeof data === "string" ? JSON.parse(data) : data;
       if (!bundle || typeof bundle !== "object") throw new Error("ADMIN_DASHBOARD_INVALID_RESPONSE");
       state.stats = bundle.stats || {};
@@ -122,7 +122,7 @@
         try { await fn(); }
         catch (error) {
           failures.push({ name, error });
-          renderAdminSectionError(name, error);
+          if ((name === "members" && !state.members.length) || (name === "payments" && !state.payments.length)) renderAdminSectionError(name, error);
         }
       });
       await Promise.all(tasks);
@@ -507,6 +507,11 @@
   $("adminQrInput")?.addEventListener("change", e => uploadAdminQr(e.target.files?.[0]));
   $("resetAdminQr")?.addEventListener("click", resetAdminQr);
 
-  window.addEventListener("nts:membership-updated", e => { if (e.detail.account?.role === "admin" && !$("adminPage")?.classList.contains("hidden")) refresh(); });
+  let membershipRefreshTimer = 0;
+  window.addEventListener("nts:membership-updated", e => {
+    if (e.detail.account?.role !== "admin" || $("adminPage")?.classList.contains("hidden")) return;
+    clearTimeout(membershipRefreshTimer);
+    membershipRefreshTimer = setTimeout(() => refresh(), 450);
+  });
   NTS.admin = { state, refresh, loadMembers, loadPayments, loadServiceSettings, openCreateMemberModal, renderSystemHealth };
 })();

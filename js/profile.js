@@ -13,7 +13,9 @@
     previewUrls: { avatar: null, cover: null },
     runtimeUrls: { avatar: null, cover: null },
     preparedMedia: { avatar: null, cover: null },
-    prepareTokens: { avatar: 0, cover: 0 }
+    prepareTokens: { avatar: 0, cover: 0 },
+    refreshPromise: null,
+    lastRefreshAt: 0
   };
   const toast = (t, m, k = "info", d) => NTS.showToast?.(t, m, k, d);
   const client = () => NTS.supabase;
@@ -210,24 +212,34 @@
     }
   }
 
-  async function refresh({ silent = false } = {}) {
-    if (!state.user || !client()) return;
-    try {
-      const { data, error } = await client().from("profiles").select("*").eq("id", state.user.id).single();
-      if (error) throw error;
-      state.profile = { ...defaults(), ...data };
-      state.removeAvatar = false;
-      state.removeCover = false;
-      render();
-      if (!silent) mediaStatus("Hồ sơ đã đồng bộ. Ảnh mới sẽ hiển thị ngay sau khi lưu.", "ok");
-      // Never block profile rendering on CDN verification. Owner sees DB/local media first;
-      // remote verification is background-only.
-      Promise.allSettled([ensureVisibleMedia("avatar"), ensureVisibleMedia("cover")]).catch(() => {});
-      runInBackground(selfHealAvatarThumb, "avatar thumbnail self-heal");
-    } catch (error) {
-      console.error(error);
-      toast("Không tải được hồ sơ", error.message || String(error), "error");
-    }
+  async function refresh({ silent = false, force = false } = {}) {
+    if (!state.user || !client()) return null;
+    if (state.refreshPromise) return state.refreshPromise;
+    if (!force && silent && state.profile && Date.now() - state.lastRefreshAt < 5000) return state.profile;
+    state.refreshPromise = (async () => {
+      try {
+        const request = client().from("profiles").select("*").eq("id", state.user.id).single();
+        const result = NTS.health?.withTimeout ? await NTS.health.withTimeout(request, 8500, "profile") : await request;
+        if (result?.error) throw result.error;
+        state.profile = { ...defaults(), ...(result?.data || {}) };
+        state.lastRefreshAt = Date.now();
+        state.removeAvatar = false; state.removeCover = false;
+        render();
+        if (!silent) mediaStatus("Hồ sơ đã đồng bộ. Ảnh mới sẽ hiển thị ngay sau khi lưu.", "ok");
+        Promise.allSettled([ensureVisibleMedia("avatar"), ensureVisibleMedia("cover")]).catch(() => {});
+        runInBackground(selfHealAvatarThumb, "avatar thumbnail self-heal");
+        return state.profile;
+      } catch (error) {
+        console.error(error);
+        if (!silent) {
+          const info = NTS.health?.friendly?.(error, "hồ sơ") || { title:"Không tải được hồ sơ", message:error.message || String(error), kind:"unknown" };
+          if (info.kind === "network") NTS.health?.notifyOnce?.("profile-network", info.title, info.message, "warning", 6500) || toast(info.title, info.message, "warning", 6500);
+          else toast(info.title, info.message, info.kind === "schema" ? "warning" : "error", 8000);
+        }
+        return state.profile;
+      }
+    })();
+    try { return await state.refreshPromise; } finally { state.refreshPromise = null; }
   }
 
   async function decodeImage(file) {
@@ -316,13 +328,22 @@
 
   async function publishAvatarThumb(thumb, revision) {
     if (!state.user || !client()) return null;
-    const { data, error } = await client().rpc("set_my_avatar_thumb_v315", {
-      p_thumb: thumb || null,
-      p_revision: Number(revision || state.profile?.avatar_revision || 0) || null
-    });
-    if (error) throw error;
-    state.profile = { ...defaults(), ...(state.profile || {}), avatar_thumb_data: thumb || null };
-    return data || null;
+    const args = { p_thumb: thumb || null, p_revision: Number(revision || state.profile?.avatar_revision || 0) || null };
+    let lastError = null;
+    for (const name of ["set_my_avatar_thumb_v3162", "set_my_avatar_thumb_v315"]) {
+      try {
+        const result = await client().rpc(name, args);
+        if (result?.error) {
+          lastError = result.error;
+          const msg = String(result.error?.message || "");
+          if (/function|schema cache|does not exist|PGRST202/i.test(msg)) continue;
+          throw result.error;
+        }
+        state.profile = { ...defaults(), ...(state.profile || {}), avatar_thumb_data: thumb || null };
+        return result?.data || null;
+      } catch (error) { lastError = error; if (!/function|schema cache|does not exist|PGRST202/i.test(String(error?.message || error))) throw error; }
+    }
+    throw lastError || new Error("AVATAR_THUMB_RPC_UNAVAILABLE");
   }
 
   async function selfHealAvatarThumb() {

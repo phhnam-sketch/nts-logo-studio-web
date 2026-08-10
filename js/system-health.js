@@ -111,7 +111,7 @@
 
   async function ensureAccount({ force = false } = {}) {
     if (!client() || !NTS.currentUser) return false;
-    if (state.ensuring && !force) return state.ensuring;
+    if (state.ensuring) return state.ensuring;
     state.ensuring = (async () => {
       try {
         const result = await withTimeout(client().rpc("ensure_my_account_v316"), 8000, "ensure account");
@@ -134,14 +134,16 @@
   async function run({ force = false } = {}) {
     if (!client() || !NTS.currentUser) return null;
     if (!force && state.last && Date.now() - state.checkedAt < 30000) return state.last;
-    if (state.running && !force) return state.running;
+    if (state.running) return state.running;
     state.running = (async () => {
       try {
         await ensureAccount();
-        const result = await retry(
-          () => withTimeout(client().rpc("system_health_v316"), 8000, "system health"),
-          { attempts: 2 }
-        );
+        const result = await retry(async () => {
+          let first = await withTimeout(client().rpc("system_health_v3162"), 8000, "system health");
+          if (!first?.error) return first;
+          if (!isSchemaError(first.error)) return first;
+          return withTimeout(client().rpc("system_health_v316"), 8000, "system health legacy");
+        }, { attempts: 2 });
         state.last = result?.data || null;
         state.lastError = null;
         state.checkedAt = Date.now();

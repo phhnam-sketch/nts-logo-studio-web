@@ -24,6 +24,8 @@
     onlineUserIds: new Set(),
     searchTimer: null,
     refreshTimer: null,
+    lastDirectoryAt: 0,
+    lastContactsAt: 0,
     contactRefreshTimer: null,
     sending: false,
     loadingMessages: false,
@@ -189,6 +191,7 @@
       const { data, error } = await rpcCascade(["list_member_directory_v316","list_member_directory_v3131","list_member_directory_v313","list_member_directory_v312","list_member_directory_v311","list_member_directory_v310"], { p_search: search.trim(), p_limit: 60 });
       if (error) throw error;
       state.directory = Array.isArray(data) ? data : [];
+      state.lastDirectoryAt = Date.now();
       renderDirectory();
       renderRequests();
       renderContacts();
@@ -208,6 +211,7 @@
       const { data, error } = await rpcCascade(["list_messenger_contacts_v316","list_messenger_contacts_v3131","list_messenger_contacts_v313","list_messenger_contacts_v312","list_messenger_contacts_v311","list_messenger_contacts_v310"], { p_limit: 60 });
       if (error) throw error;
       state.messengerContacts = Array.isArray(data) ? data : [];
+      state.lastContactsAt = Date.now();
       state.unread = state.messengerContacts.reduce((sum, x) => sum + Number(x.unread_count || 0), 0);
       renderUnread();
       renderMessengerPanel();
@@ -658,7 +662,7 @@
         const patch = payload?.new || null;
         applyPublicProfileRealtime(patch);
         const changedId = String(patch?.user_id || "");
-        if (changedId) NTS.avatar?.hydrateMembers?.([{ user_id:changedId }], { force:true }).catch?.(() => {});
+        if (changedId) NTS.avatar?.hydrateMembers?.([{ user_id:changedId }], { force:false }).catch?.(() => {});
       })
       .subscribe();
   }
@@ -941,8 +945,9 @@
 
   window.addEventListener("visibilitychange", () => {
     if (!state.user || document.visibilityState !== "visible") return;
-    if (state.pageOpen) loadDirectory($("communityMemberSearch")?.value || "");
-    loadMessengerContacts({ silent:true });
+    const now = Date.now();
+    if (state.pageOpen && now - state.lastDirectoryAt > 15000) loadDirectory($("communityMemberSearch")?.value || "");
+    if (now - state.lastContactsAt > 15000) loadMessengerContacts({ silent:true });
   });
   window.addEventListener("online", () => { if (state.user) startGlobalRealtime(); });
 

@@ -14,7 +14,10 @@
     paymentPollTimer: 0,
     pendingPaymentIds: new Set(),
     autoPaymentId: null,
-    autoCheckoutUrl: null
+    autoCheckoutUrl: null,
+    settingsPromise: null,
+    refreshPromise: null,
+    lastAccountAt: 0
   };
 
   function client() { return NTS.supabase; }
@@ -38,19 +41,24 @@
   }
 
   async function loadSettings() {
-    const c = client();
-    if (!c) { state.settings = fallbackSettings(); renderVipPage(); return state.settings; }
-    try {
-      const { data, error } = await c.from("site_settings").select("*").eq("id", true).single();
-      if (error) throw error;
-      state.settings = { ...fallbackSettings(), ...(data || {}) };
-    } catch (error) {
-      console.warn("site_settings fallback", error);
-      state.settings = fallbackSettings();
-    }
-    if (!state.paymentOrderCode) regenerateOrderCode();
-    renderVipPage();
-    return state.settings;
+    if (state.settingsPromise) return state.settingsPromise;
+    state.settingsPromise = (async () => {
+      const c = client();
+      if (!c) { state.settings = fallbackSettings(); renderVipPage(); return state.settings; }
+      try {
+        const request = c.from("site_settings").select("*").eq("id", true).single();
+        const result = NTS.health?.withTimeout ? await NTS.health.withTimeout(request, 8000, "site settings") : await request;
+        if (result?.error) throw result.error;
+        state.settings = { ...fallbackSettings(), ...(result?.data || {}) };
+      } catch (error) {
+        console.warn("site_settings fallback", error);
+        state.settings = state.settings || fallbackSettings();
+      }
+      if (!state.paymentOrderCode) regenerateOrderCode();
+      renderVipPage();
+      return state.settings;
+    })();
+    try { return await state.settingsPromise; } finally { state.settingsPromise = null; }
   }
 
   function defaultAccount() {
@@ -58,44 +66,42 @@
     return { role: "member", plan: "free", status: "active", vip_until: null, is_vip: false, free_limit: s.free_monthly_limit, used: 0, reserved: 0, remaining: s.free_monthly_limit, vip_monthly_price: s.vip_monthly_price };
   }
 
-  async function refreshAccount({ silent = false } = {}) {
+  async function refreshAccount({ silent = false, force = false } = {}) {
     const c = client();
     if (!c || !state.user) return null;
-    if (!silent) state.loading = true;
-    try {
-      // V3.16 self-heals a missing profile/membership row without blocking the UI.
-      await NTS.health?.ensureAccount?.();
-      const read = async () => {
-        const request = c.rpc("get_my_account_state");
-        return NTS.health?.withTimeout ? NTS.health.withTimeout(request, 8500, "account state") : request;
-      };
-      const result = NTS.health?.retry
-        ? await NTS.health.retry(read, { attempts: 3 })
-        : await read();
-      if (result?.error) throw result.error;
-      const data = result?.data;
-      state.account = Array.isArray(data) ? data[0] : data;
-      if (!state.account) state.account = defaultAccount();
-      renderAccount();
-      window.dispatchEvent(new CustomEvent("nts:membership-updated", { detail: { account: state.account } }));
-      return state.account;
-    } catch (error) {
-      console.error("refreshAccount", error);
-      // A transient network problem must not demote an ADMIN/VIP UI to FREE.
-      if (!state.account) state.account = defaultAccount();
-      renderAccount();
-      if (!silent) {
-        const info = NTS.health?.friendly?.(error, "quyền tài khoản") || { kind:"unknown", title:"Không tải được quyền tài khoản", message:String(error?.message || error) };
-        if (info.kind === "schema") {
-          NTS.health?.notifyOnce?.("membership-schema", info.title, info.message, "warning", 10000) || toast(info.title, info.message, "warning", 10000);
-        } else if (info.kind === "network") {
-          NTS.health?.notifyOnce?.("membership-network", info.title, info.message, "warning", 6500) || toast(info.title, info.message, "warning", 6500);
-        } else {
-          toast(info.title, info.message, "error", 8000);
+    if (state.refreshPromise) return state.refreshPromise;
+    if (!force && silent && state.account && Date.now() - state.lastAccountAt < 5000) return state.account;
+    state.refreshPromise = (async () => {
+      if (!silent) state.loading = true;
+      try {
+        await NTS.health?.ensureAccount?.();
+        const read = async () => {
+          const request = c.rpc("get_my_account_state");
+          return NTS.health?.withTimeout ? NTS.health.withTimeout(request, 8500, "account state") : request;
+        };
+        const result = NTS.health?.retry ? await NTS.health.retry(read, { attempts: 2 }) : await read();
+        if (result?.error) throw result.error;
+        const data = result?.data;
+        state.account = Array.isArray(data) ? data[0] : data;
+        if (!state.account) state.account = defaultAccount();
+        state.lastAccountAt = Date.now();
+        renderAccount();
+        window.dispatchEvent(new CustomEvent("nts:membership-updated", { detail: { account: state.account } }));
+        return state.account;
+      } catch (error) {
+        console.error("refreshAccount", error);
+        if (!state.account) state.account = defaultAccount();
+        renderAccount();
+        if (!silent) {
+          const info = NTS.health?.friendly?.(error, "quyền tài khoản") || { kind:"unknown", title:"Không tải được quyền tài khoản", message:String(error?.message || error) };
+          if (info.kind === "schema") NTS.health?.notifyOnce?.("membership-schema", info.title, info.message, "warning", 10000) || toast(info.title, info.message, "warning", 10000);
+          else if (info.kind === "network") NTS.health?.notifyOnce?.("membership-network", info.title, info.message, "warning", 6500) || toast(info.title, info.message, "warning", 6500);
+          else toast(info.title, info.message, "error", 8000);
         }
-      }
-      return state.account;
-    } finally { state.loading = false; }
+        return state.account;
+      } finally { state.loading = false; }
+    })();
+    try { return await state.refreshPromise; } finally { state.refreshPromise = null; }
   }
 
   function renderAccount() {

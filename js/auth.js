@@ -20,6 +20,8 @@
 
   let mode = "login";
   let client = null;
+  let lastAuthUserId = null;
+  let lastAuthDispatchAt = 0;
   const toastTimers = new WeakMap();
   function applyLoginBranding() {
     const login = cfg.LOGIN || {};
@@ -152,9 +154,19 @@
     dialog: { confirm: (opts={}) => systemDialog(opts), prompt: (opts={}) => systemDialog({ ...opts, input: true }) }
   });
 
-  function dispatchUser(user, event = "SIGNED_IN") {
-    window.NTS.currentUser = user || null;
-    window.dispatchEvent(new CustomEvent("nts:auth-user", { detail: { user: user || null, event } }));
+  function dispatchUser(user, event = "SIGNED_IN", { force = false } = {}) {
+    const next = user || null;
+    const id = next?.id || null;
+    window.NTS.currentUser = next;
+    const now = Date.now();
+    const passive = event === "TOKEN_REFRESHED";
+    const duplicateBoot = id && id === lastAuthUserId && (event === "INITIAL_SESSION" || event === "SIGNED_IN") && (now - lastAuthDispatchAt < 2500);
+    if (!force && (passive && id === lastAuthUserId || duplicateBoot)) return false;
+    if (!id && lastAuthUserId === null && !force && now - lastAuthDispatchAt < 1200) return false;
+    lastAuthUserId = id;
+    lastAuthDispatchAt = now;
+    window.dispatchEvent(new CustomEvent("nts:auth-user", { detail: { user: next, event } }));
+    return true;
   }
 
   function setMode(nextMode) {
@@ -351,8 +363,19 @@
       if (error) throw error;
       if (data.session?.user) showAuthenticated(data.session.user, "INITIAL_SESSION"); else showAnonymous("INITIAL_SESSION");
       client.auth.onAuthStateChange((event, session) => {
-        if (event === "SIGNED_OUT" || !session?.user) showAnonymous(event);
-        else if (["SIGNED_IN", "TOKEN_REFRESHED", "USER_UPDATED", "INITIAL_SESSION"].includes(event)) showAuthenticated(session.user, event);
+        if (event === "SIGNED_OUT" || !session?.user) { showAnonymous(event); return; }
+        if (event === "TOKEN_REFRESHED") {
+          window.NTS.currentUser = session.user;
+          updateBaseUserUI(session.user);
+          return;
+        }
+        if (event === "USER_UPDATED") {
+          window.NTS.currentUser = session.user;
+          updateBaseUserUI(session.user);
+          window.dispatchEvent(new CustomEvent("nts:user-metadata-updated", { detail: { user: session.user } }));
+          return;
+        }
+        if (["SIGNED_IN", "INITIAL_SESSION"].includes(event)) showAuthenticated(session.user, event);
       });
     } catch (error) { showAnonymous("ERROR"); showToast("Lỗi kết nối Supabase", authErrorMessage(error), "error", 8500); }
   }
