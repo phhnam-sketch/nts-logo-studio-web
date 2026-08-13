@@ -14,7 +14,8 @@
     runtimeUrls: { avatar: null, cover: null },
     preparedMedia: { avatar: null, cover: null },
     prepareTokens: { avatar: 0, cover: 0 },
-    loadRequestId: 0
+    refreshPromise: null,
+    lastRefreshAt: 0
   };
   const toast = (t, m, k = "info", d) => NTS.showToast?.(t, m, k, d);
   const client = () => NTS.supabase;
@@ -50,7 +51,8 @@
     });
   }
   function cacheBust(url, stamp) {
-    if (!url || String(url).startsWith("blob:")) return url;
+    if (!url || String(url).startsWith("blob:") || String(url).startsWith("data:")) return url;
+    if (!stamp) return url;
     try {
       const parsed = new URL(url, window.location.href);
       parsed.searchParams.set("v", String(stamp || Date.now()));
@@ -83,9 +85,9 @@
     if (transient) return transient;
     if (kind === "avatar") {
       const raw = p.avatar_url || state.user?.user_metadata?.avatar_url || state.user?.user_metadata?.picture || null;
-      return raw ? cacheBust(raw, p.updated_at || Date.now()) : brandFallback("avatar");
+      return raw ? cacheBust(raw, p.avatar_revision || p.updated_at || null) : brandFallback("avatar");
     }
-    return p.cover_url ? cacheBust(p.cover_url, p.updated_at || Date.now()) : brandFallback("cover");
+    return p.cover_url ? cacheBust(p.cover_url, p.cover_revision || p.updated_at || null) : brandFallback("cover");
   }
 
   function clamp(v, min, max, fallback) {
@@ -211,31 +213,47 @@
     }
   }
 
-  async function refresh({ silent = false } = {}) {
-    if (!state.user || !client()) return;
-    const requestId = ++state.loadRequestId;
-    try {
-      const read = () => client().from("profiles").select("*").eq("id", state.user.id).single();
-      const result = NTS.health?.resilient
-        ? await NTS.health.resilient(read, { key:`profile:${state.user.id}`, attempts:3, timeout:9000, label:"profile" })
-        : await read();
-      const { data, error } = result;
-      if (error) throw error;
-      if (requestId !== state.loadRequestId) return;
-      state.profile = { ...defaults(), ...data };
-      state.removeAvatar = false;
-      state.removeCover = false;
-      render();
-      if (!silent) mediaStatus("Hồ sơ đã đồng bộ. Ảnh mới sẽ hiển thị ngay sau khi lưu.", "ok");
-      // Never block profile rendering on CDN verification. Owner sees DB/local media first;
-      // remote verification is background-only.
-      Promise.allSettled([ensureVisibleMedia("avatar"), ensureVisibleMedia("cover")]).catch(() => {});
-      runInBackground(selfHealAvatarThumb, "avatar thumbnail self-heal");
-    } catch (error) {
-      if (requestId !== state.loadRequestId) return;
-      console.error(error);
-      toast("Không tải được hồ sơ", error.message || String(error), "error");
-    }
+  function applyBootstrapProfile(data) {
+    const profile = data?.profile;
+    if (!profile || !state.user) return false;
+    if (data.user_id && String(data.user_id) !== String(state.user.id)) return false;
+    state.profile = { ...defaults(), ...profile };
+    state.lastRefreshAt = Date.now();
+    state.removeAvatar = false; state.removeCover = false;
+    render();
+    runInBackground(selfHealAvatarThumb, "avatar thumbnail self-heal");
+    return true;
+  }
+
+  async function refresh({ silent = false, force = false } = {}) {
+    if (!state.user || !client()) return null;
+    if (state.refreshPromise) return state.refreshPromise;
+    if (!force && state.profile && Date.now() - state.lastRefreshAt < 30000) return state.profile;
+    state.refreshPromise = (async () => {
+      try {
+        // Let the pinned supabase-js/PostgREST retry transient network failures.
+        // App-level Promise.race timeouts could leave the original request alive.
+        const result = await client().from("profiles").select("*").eq("id", state.user.id).single();
+        if (result?.error) throw result.error;
+        state.profile = { ...defaults(), ...(result?.data || {}) };
+        state.lastRefreshAt = Date.now();
+        state.removeAvatar = false; state.removeCover = false;
+        render();
+        if (!silent) mediaStatus("Hồ sơ đã đồng bộ. Ảnh mới sẽ hiển thị ngay sau khi lưu.", "ok");
+        Promise.allSettled([ensureVisibleMedia("avatar"), ensureVisibleMedia("cover")]).catch(() => {});
+        runInBackground(selfHealAvatarThumb, "avatar thumbnail self-heal");
+        return state.profile;
+      } catch (error) {
+        console.error(error);
+        if (!silent) {
+          const info = NTS.health?.friendly?.(error, "hồ sơ") || { title:"Không tải được hồ sơ", message:error.message || String(error), kind:"unknown" };
+          if (info.kind === "network") NTS.health?.notifyOnce?.("profile-network", info.title, info.message, "warning", 6500) || toast(info.title, info.message, "warning", 6500);
+          else toast(info.title, info.message, info.kind === "schema" ? "warning" : "error", 8000);
+        }
+        return state.profile;
+      }
+    })();
+    try { return await state.refreshPromise; } finally { state.refreshPromise = null; }
   }
 
   async function decodeImage(file) {
@@ -324,13 +342,22 @@
 
   async function publishAvatarThumb(thumb, revision) {
     if (!state.user || !client()) return null;
-    const { data, error } = await client().rpc("set_my_avatar_thumb_v315", {
-      p_thumb: thumb || null,
-      p_revision: Number(revision || state.profile?.avatar_revision || 0) || null
-    });
-    if (error) throw error;
-    state.profile = { ...defaults(), ...(state.profile || {}), avatar_thumb_data: thumb || null };
-    return data || null;
+    const args = { p_thumb: thumb || null, p_revision: Number(revision || state.profile?.avatar_revision || 0) || null };
+    let lastError = null;
+    for (const name of ["set_my_avatar_thumb_v3162", "set_my_avatar_thumb_v315"]) {
+      try {
+        const result = await client().rpc(name, args);
+        if (result?.error) {
+          lastError = result.error;
+          const msg = String(result.error?.message || "");
+          if (/function|schema cache|does not exist|PGRST202/i.test(msg)) continue;
+          throw result.error;
+        }
+        state.profile = { ...defaults(), ...(state.profile || {}), avatar_thumb_data: thumb || null };
+        return result?.data || null;
+      } catch (error) { lastError = error; if (!/function|schema cache|does not exist|PGRST202/i.test(String(error?.message || error))) throw error; }
+    }
+    throw lastError || new Error("AVATAR_THUMB_RPC_UNAVAILABLE");
   }
 
   async function selfHealAvatarThumb() {
@@ -777,10 +804,23 @@
     const next = e.detail.user || null;
     if (state.user?.id && next?.id !== state.user.id) revokeAllTransient();
     state.user = next;
-    if (state.user) refresh();
-    else { state.profile = null; revokeAllTransient(); }
+    if (!state.user) { state.profile = null; state.lastRefreshAt = 0; revokeAllTransient(); return; }
+    const boot = NTS.data?.bootstrapData;
+    if (boot && String(boot.user_id || "") === String(state.user.id)) applyBootstrapProfile(boot);
+    NTS.data?.scheduleBootstrap?.(state.user, 0);
+    NTS.data?.defer?.(`profile-fallback:${state.user.id}`, 5000, () => {
+      if (!state.profile) refresh({ silent: true }).catch(() => {});
+    });
+  });
+  window.addEventListener("nts:bootstrap-data", e => {
+    if (state.user) applyBootstrapProfile(e.detail?.data);
   });
   window.addEventListener("beforeunload", revokeAllTransient);
   NTS.profile = { state, refresh, saveMediaCrop, removeMedia, getMediaSourceUrl, hasSavedMedia, getSavedCrop, canonicalMediaUrl };
-  if (NTS.currentUser) { state.user = NTS.currentUser; refresh(); }
+  if (NTS.currentUser) {
+    state.user = NTS.currentUser;
+    const boot = NTS.data?.bootstrapData;
+    if (boot) applyBootstrapProfile(boot);
+    NTS.data?.scheduleBootstrap?.(state.user, 0);
+  }
 })();

@@ -7,8 +7,7 @@
     checkedAt: 0,
     ensuring: null,
     running: null,
-    notified: new Set(),
-    inflight: new Map()
+    notified: new Set()
   };
 
   const client = () => NTS.supabase;
@@ -63,7 +62,7 @@
     if (kind === "schema") return {
       kind,
       title: "Database chưa đồng bộ với web",
-      message: "Hãy chạy duy nhất migration `supabase/017_v3_16_full_system_repair.sql`, sau đó tải lại trang.",
+      message: "Database chưa đồng bộ. Hãy chạy migration recovery mới nhất trong gói V3.17 rồi tải lại trang.",
       detail: raw
     };
     if (kind === "auth") return {
@@ -110,28 +109,9 @@
     }
   }
 
-
-  async function singleFlight(key, operation) {
-    const k = String(key || "default");
-    if (state.inflight.has(k)) return state.inflight.get(k);
-    const pending = Promise.resolve().then(operation).finally(() => {
-      if (state.inflight.get(k) === pending) state.inflight.delete(k);
-    });
-    state.inflight.set(k, pending);
-    return pending;
-  }
-
-  async function resilient(operation, { key = null, attempts = 3, timeout = 9000, label = "request" } = {}) {
-    const run = () => retry(
-      () => withTimeout(Promise.resolve().then(operation), timeout, label),
-      { attempts, transientOnly: true }
-    );
-    return key ? singleFlight(key, run) : run();
-  }
-
   async function ensureAccount({ force = false } = {}) {
     if (!client() || !NTS.currentUser) return false;
-    if (state.ensuring && !force) return state.ensuring;
+    if (state.ensuring) return state.ensuring;
     state.ensuring = (async () => {
       try {
         const result = await withTimeout(client().rpc("ensure_my_account_v316"), 8000, "ensure account");
@@ -154,14 +134,16 @@
   async function run({ force = false } = {}) {
     if (!client() || !NTS.currentUser) return null;
     if (!force && state.last && Date.now() - state.checkedAt < 30000) return state.last;
-    if (state.running && !force) return state.running;
+    if (state.running) return state.running;
     state.running = (async () => {
       try {
-        await ensureAccount();
-        const result = await retry(
-          () => withTimeout(client().rpc("system_health_v316"), 8000, "system health"),
-          { attempts: 2 }
-        );
+        // app_bootstrap_v317 already guarantees account rows. Avoid another write/read
+        // request during startup; only repair when bootstrap is unavailable.
+        if (!NTS.data?.bootstrapData) await ensureAccount();
+        let result = await client().rpc("system_health_v317");
+        if (result?.error && isSchemaError(result.error)) result = await client().rpc("system_health_v3162");
+        if (result?.error && isSchemaError(result.error)) result = await client().rpc("system_health_v316");
+        if (result?.error) throw result.error;
         state.last = result?.data || null;
         state.lastError = null;
         state.checkedAt = Date.now();
@@ -180,8 +162,9 @@
   }
 
   function notifyOnce(key, title, message, kind = "warning", duration = 8000) {
-    if (state.notified.has(key)) return;
-    state.notified.add(key);
+    const normalizedKey = /network/i.test(String(key || "")) ? "network-global" : key;
+    if (state.notified.has(normalizedKey)) return;
+    state.notified.add(normalizedKey);
     NTS.showToast?.(title, message, kind, duration);
   }
 
@@ -198,11 +181,19 @@
 
   window.addEventListener("nts:auth-user", event => {
     if (!event.detail?.user) {
-      state.last = null; state.lastError = null; state.checkedAt = 0; state.notified.clear(); state.inflight.clear();
+      state.last = null; state.lastError = null; state.checkedAt = 0; state.notified.clear();
       return;
     }
-    // Do not block first paint/login. Repair + health run in the background.
-    setTimeout(() => run({ force: true }), 0);
+    // Health is diagnostics, not startup-critical data. It is intentionally delayed
+    // until the bootstrap request has completed so it cannot compete with Profile/UI.
+  });
+  window.addEventListener("nts:bootstrap-data", () => {
+    NTS.data?.defer?.("system-health-after-bootstrap", 4500, () => run({ force: true }));
+  });
+  window.addEventListener("nts:network-state", event => {
+    if (event.detail?.online && NTS.currentUser && state.lastError && isTransient(state.lastError)) {
+      NTS.data?.defer?.("system-health-reconnect", 1200, () => run({ force: true }));
+    }
   });
 
   NTS.health = {
@@ -211,8 +202,6 @@
     ensureAccount,
     retry,
     withTimeout,
-    singleFlight,
-    resilient,
     classify,
     friendly,
     isTransient,
@@ -221,5 +210,4 @@
     missingFeatures,
     notifyOnce
   };
-  if (NTS.currentUser) setTimeout(() => run({ force: true }), 0);
 })();

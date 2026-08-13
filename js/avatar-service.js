@@ -47,8 +47,8 @@
     try {
       const { data } = NTS.supabase.storage.from(BUCKET).getPublicUrl(`${id}/avatar.jpg`);
       if (!data?.publicUrl) return null;
-      const version = versionOf(member) || (forceStamp ? Date.now() : Math.floor(Date.now() / 30000));
-      return addVersion(data.publicUrl, version);
+      const version = versionOf(member) || (forceStamp ? Date.now() : 0);
+      return version ? addVersion(data.publicUrl, version) : data.publicUrl;
     } catch (_) { return null; }
   }
 
@@ -76,14 +76,17 @@
 
   function addVersion(url, version) {
     if (!url || /^(blob:|data:)/i.test(String(url))) return url;
+    if (version == null || version === "") return String(url);
     try {
       const u = new URL(String(url), window.location.href);
-      const raw = version instanceof Date ? version.getTime() : (Number(version) || new Date(version || Date.now()).getTime());
-      u.searchParams.set("v", String(Number.isFinite(raw) ? raw : Date.now()));
+      const numeric = Number(version);
+      const parsed = version instanceof Date ? version.getTime() : (numeric || new Date(version).getTime());
+      if (!Number.isFinite(parsed)) return u.href;
+      u.searchParams.set("v", String(parsed));
       return u.href;
     } catch (_) {
       const text = String(url);
-      return `${text}${text.includes("?") ? "&" : "?"}v=${encodeURIComponent(version || Date.now())}`;
+      return `${text}${text.includes("?") ? "&" : "?"}v=${encodeURIComponent(version)}`;
     }
   }
 
@@ -163,9 +166,9 @@
     if (resolved && !isDefaultLike(resolved)) values.push(resolved);
     if (exactStorage) values.push(exactStorage);
     if (revisionStorage) values.push(revisionStorage);
-    if (raw && !isDefaultLike(raw)) values.push(addVersion(raw, versionOf(m) || Date.now()));
+    if (raw && !isDefaultLike(raw)) values.push(versionOf(m) ? addVersion(raw, versionOf(m)) : raw);
     if (canonical) values.push(canonical);
-    if (oauth && !isDefaultLike(oauth)) values.push(addVersion(oauth, versionOf(m) || Date.now()));
+    if (oauth && !isDefaultLike(oauth)) values.push(versionOf(m) ? addVersion(oauth, versionOf(m)) : oauth);
     // IMPORTANT: static fallback is not part of the candidate chain. If it loaded here,
     // onerror would never reach hydration / authenticated download recovery.
     return [...new Set(values.filter(Boolean))];
@@ -360,6 +363,11 @@
     const token = `${id}:${Date.now()}:${Math.random()}`;
     img.dataset.ntsAvatarToken = token;
     const list = candidates(m);
+    const currentSrc = img.currentSrc || img.getAttribute("src") || "";
+    if (list.length && currentSrc === list[0] && img.complete && img.naturalWidth > 0) {
+      if (hydrate && id && (!storagePath(m) || isDefaultLike(m.avatar_url))) scheduleHydrate(id);
+      return;
+    }
     let index = 0;
     let signedTried = false;
     let rehydrated = false;
@@ -510,8 +518,8 @@
 
   window.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible") return;
-    const ids = [...bound.keys()];
-    if (ids.length) hydrateMembers(ids.map(user_id => ({ user_id })), { force:true });
+    const ids = [...bound.keys()].filter(id => !cacheRow(id) && !resolvedUrlCache.has(id));
+    if (ids.length) NTS.data?.defer?.("avatar-visible-hydrate", 1200, () => hydrateMembers(ids.map(user_id => ({ user_id })), { force:false }));
   });
 
   setInterval(forgetDetached, 60000);

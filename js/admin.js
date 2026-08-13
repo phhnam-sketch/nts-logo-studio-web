@@ -4,42 +4,26 @@
   const $ = id => document.getElementById(id);
   const NTS = window.NTS = window.NTS || {};
   const cfg = window.APP_CONFIG || {};
-  const state = { members: [], payments: [], stats: null, loading: false, modalProfile: null };
+  const state = { members: [], payments: [], stats: null, loading: false, modalProfile: null, refreshPromise: null, lastRefreshAt: 0 };
   const client = () => NTS.supabase;
   const toast = (t, m, k = "info", d) => NTS.showToast?.(t, m, k, d);
   const money = v => NTS.membership?.money?.(v) || `${Number(v || 0).toLocaleString("vi-VN")} ₫`;
   const dt = v => NTS.membership?.dateTime?.(v) || "—";
   const esc = v => String(v ?? "").replace(/[&<>'"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[c]);
 
-  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-
   function transientReadError(error) {
     const message = String(error?.message || error || "").toLowerCase();
     const status = Number(error?.status || error?.statusCode || error?.context?.status || 0);
-    return error instanceof TypeError
-      || /failed to fetch|networkerror|network error|load failed|fetch failed|timeout|timed out|connection reset|connection closed|gateway/.test(message)
-      || [408, 429, 502, 503, 504, 520, 522, 524].includes(status);
+    return error instanceof TypeError || /failed to fetch|networkerror|network error|load failed|fetch failed|timeout|timed out|connection reset|connection closed|gateway/.test(message) || [408,429,502,503,504,520,522,524].includes(status);
   }
-
-  async function adminRead(label, operation, attempts = 3) {
-    let lastError = null;
-    for (let attempt = 0; attempt < attempts; attempt += 1) {
-      try {
-        const pending = operation();
-        const result = NTS.health?.withTimeout
-          ? await NTS.health.withTimeout(pending, 9000, label)
-          : await pending;
-        if (result?.error) throw result.error;
-        return result;
-      } catch (error) {
-        lastError = error;
-        if (!transientReadError(error) || attempt >= attempts - 1) throw error;
-        const delay = Math.round(220 * (2 ** attempt) + Math.random() * 120);
-        console.warn(`Admin read retry: ${label} (${attempt + 1}/${attempts})`, error);
-        await sleep(delay);
-      }
-    }
-    throw lastError || new Error(`Không tải được ${label}`);
+  function schemaReadError(error) {
+    const message = String(error?.message || error || "");
+    return /function|schema cache|does not exist|PGRST202|42883/i.test(message);
+  }
+  async function adminRead(label, operation) {
+    const result = await operation();
+    if (result?.error) throw result.error;
+    return result;
   }
 
   function renderStats() {
@@ -85,56 +69,52 @@
     const search = $("adminMemberSearch")?.value?.trim() || null;
     const filter = $("adminPaymentFilter")?.value || "pending";
     try {
-      const { data } = await adminRead("Admin Dashboard", () => client().rpc("admin_dashboard_v316", { p_search: search, p_payment_status: filter }), 3);
+      const { data } = await adminRead("Admin Dashboard", () => client().rpc("admin_dashboard_v316", { p_search: search, p_payment_status: filter }));
       const bundle = typeof data === "string" ? JSON.parse(data) : data;
       if (!bundle || typeof bundle !== "object") throw new Error("ADMIN_DASHBOARD_INVALID_RESPONSE");
       state.stats = bundle.stats || {};
       state.members = Array.isArray(bundle.members) ? bundle.members : [];
       state.payments = Array.isArray(bundle.payments) ? bundle.payments : [];
-      renderStats();
-      renderMembers();
-      await renderPayments();
-      applyServiceSettings(bundle.settings || {});
-      return true;
+      renderStats(); renderMembers(); await renderPayments(); applyServiceSettings(bundle.settings || {});
+      return { ok:true, schemaMissing:false, error:null };
     } catch (error) {
-      const message = String(error?.message || error || "");
-      if (/admin_dashboard_v316|function|schema cache|does not exist|PGRST202/i.test(message)) return false;
-      console.warn("Bundled Admin Dashboard unavailable; falling back to granular reads", error);
-      return false;
+      return { ok:false, schemaMissing:schemaReadError(error), error };
     }
   }
 
-  async function refresh() {
-    if (NTS.membership?.state?.account?.role !== "admin" || state.loading) return;
+  async function refresh({ force = false } = {}) {
+    if (NTS.membership?.state?.account?.role !== "admin") return;
+    if (!force && state.lastRefreshAt && Date.now() - state.lastRefreshAt < 12000) { void renderSystemHealth({ force:false }); return; }
+    if (state.refreshPromise) return state.refreshPromise;
     state.loading = true;
-    void renderSystemHealth({ force: true });
-    try {
-      const bundled = await loadDashboardBundle();
-      if (bundled) return;
-
-      const failures = [];
-      const tasks = [
-        ["stats", loadStats],
-        ["members", loadMembers],
-        ["payments", loadPayments],
-        ["settings", loadServiceSettings]
-      ].map(async ([name, fn]) => {
-        try { await fn(); }
-        catch (error) {
-          failures.push({ name, error });
-          renderAdminSectionError(name, error);
+    state.refreshPromise = (async () => {
+      void renderSystemHealth({ force:false });
+      try {
+        const bundled = await loadDashboardBundle();
+        if (bundled.ok) { state.lastRefreshAt = Date.now(); return; }
+        if (!bundled.schemaMissing) {
+          console.warn("Admin dashboard network read failed; keeping stale UI", bundled.error);
+          if (!state.members.length) renderAdminSectionError("members", bundled.error);
+          if (!state.payments.length) renderAdminSectionError("payments", bundled.error);
+          NTS.health?.notifyOnce?.("admin-network", "Admin Dashboard tạm thời gián đoạn", "Dữ liệu cũ được giữ nguyên. Hãy thử Làm mới khi kết nối ổn định.", "warning", 6500);
+          return;
         }
-      });
-      await Promise.all(tasks);
-      if (failures.length) {
-        const labels = failures.map(x => x.name).join(", ");
-        const first = failures[0].error;
-        toast("Admin Dashboard tải chưa đầy đủ", `${labels}: ${first?.message || first}. Hệ thống đã tự thử lại nhiều lần; bấm “Làm mới” để thử tiếp.`, "warning", 8000);
-      }
-    } catch (error) {
-      console.error(error);
-      toast("Không tải được Admin Dashboard", error.message || String(error), "error", 7000);
-    } finally { state.loading = false; }
+        // Schema fallback only: avoid a network outage fan-out into four more requests.
+        const failures = [];
+        for (const [name, fn] of [["stats",loadStats],["members",loadMembers],["payments",loadPayments],["settings",loadServiceSettings]]) {
+          try { await fn(); } catch (error) { failures.push({name,error}); if ((name === "members" && !state.members.length) || (name === "payments" && !state.payments.length)) renderAdminSectionError(name,error); }
+        }
+        if (!failures.length) state.lastRefreshAt = Date.now();
+        else {
+          const first = failures[0].error;
+          NTS.health?.notifyOnce?.("admin-partial", "Admin Dashboard tải chưa đầy đủ", `${failures.map(x=>x.name).join(", ")}: ${first?.message || first}`, "warning", 7000);
+        }
+      } catch (error) {
+        console.error(error);
+        NTS.health?.notifyOnce?.("admin-failed", "Không tải được Admin Dashboard", error.message || String(error), "error", 7000);
+      } finally { state.loading = false; state.refreshPromise = null; }
+    })();
+    return state.refreshPromise;
   }
 
   async function loadStats() {
@@ -490,7 +470,7 @@
   let searchTimer = 0;
   $("adminMemberSearch")?.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadMembers, 320); });
   $("adminPaymentFilter")?.addEventListener("change", loadPayments);
-  $("refreshAdminButton")?.addEventListener("click", refresh);
+  $("refreshAdminButton")?.addEventListener("click", () => refresh({ force:true }));
   $("refreshSystemHealth")?.addEventListener("click", () => renderSystemHealth({ force: true }));
   $("createMemberButton")?.addEventListener("click", openCreateMemberModal);
   $("adminMembersBody")?.addEventListener("click", e => { const b = e.target.closest("[data-admin-edit]"); if (b) openMemberModal(b.dataset.adminEdit); });
@@ -507,6 +487,11 @@
   $("adminQrInput")?.addEventListener("change", e => uploadAdminQr(e.target.files?.[0]));
   $("resetAdminQr")?.addEventListener("click", resetAdminQr);
 
-  window.addEventListener("nts:membership-updated", e => { if (e.detail.account?.role === "admin" && !$("adminPage")?.classList.contains("hidden")) refresh(); });
+  let membershipRefreshTimer = 0;
+  window.addEventListener("nts:membership-updated", e => {
+    if (e.detail.account?.role !== "admin" || $("adminPage")?.classList.contains("hidden")) return;
+    clearTimeout(membershipRefreshTimer);
+    membershipRefreshTimer = setTimeout(() => refresh({ force:false }), 900);
+  });
   NTS.admin = { state, refresh, loadMembers, loadPayments, loadServiceSettings, openCreateMemberModal, renderSystemHealth };
 })();
